@@ -79,6 +79,63 @@ def get_satellites():
     return jsonify({'satellites': result, 'date': almanac_data['date']})
 
 
+
+@app.route('/live')
+def live():
+    return render_template('live.html')
+
+
+@app.route('/api/live-positions', methods=['GET'])
+def live_positions():
+    global almanac_data
+
+    if not almanac_data['satellites']:
+        dt = datetime.now(timezone.utc) - timedelta(days=2)
+        for offset in range(5):
+            candidate = dt - timedelta(days=offset)
+            text = fetch_almanac(candidate.year, candidate.timetuple().tm_yday)
+            if text:
+                satellites = parse_yuma(text)
+                if satellites:
+                    almanac_data = {
+                        'satellites': satellites,
+                        'date': candidate.strftime("%Y-%m-%d"),
+                        'week': satellites[0]['wk'],
+                        'toa': satellites[0]['toa'],
+                    }
+                    break
+
+    if not almanac_data['satellites']:
+        return jsonify({'error': 'Could not load almanac'}), 503
+
+    now = datetime.now(timezone.utc)
+    gps_sec = gps_time_from_datetime(now)
+
+    positions = []
+    for sat in almanac_data['satellites']:
+        try:
+            pos = propagate(sat, gps_sec)
+            geo = geodetic(pos['x'], pos['y'], pos['z'])
+            positions.append({
+                'prn': sat['id'],
+                'healthy': sat['health'] == 0,
+                'x': pos['x'],
+                'y': pos['y'],
+                'z': pos['z'],
+                'lat': round(geo['lat'], 4),
+                'lon': round(geo['lon'], 4),
+                'alt_km': round(geo['alt'] / 1000, 1),
+            })
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+
+    return jsonify({
+        'time': now.strftime("%Y-%m-%d %H:%M:%S UTC"),
+        'almanac_date': almanac_data['date'],
+        'satellites': positions,
+    })
+
+
 @app.route('/api/calculate', methods=['POST'])
 def calculate_position():
     if not almanac_data['satellites']:

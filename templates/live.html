@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Live Sky View</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #000; color: #e0e0ff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow: hidden; height: 100vh; }
+        #canvas-container { position: absolute; inset: 0; }
+
+        #topbar {
+            position: absolute; top: 0; left: 0; right: 0;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 20px;
+            background: linear-gradient(to bottom, rgba(0,0,10,0.9), transparent);
+            z-index: 10;
+        }
+        #topbar h1 { font-size: 1.3em; letter-spacing: 2px; color: #7ecfff; }
+        #topbar a { color: #aaa; text-decoration: none; font-size: 0.9em; border: 1px solid #333; padding: 5px 14px; border-radius: 20px; transition: all 0.2s; }
+        #topbar a:hover { color: #fff; border-color: #7ecfff; }
+
+        #status {
+            position: absolute; top: 60px; left: 20px;
+            background: rgba(0,0,10,0.75); border: 1px solid #1a3a5c;
+            border-radius: 8px; padding: 14px 18px; font-size: 0.82em;
+            line-height: 1.9; z-index: 10; min-width: 220px;
+        }
+        #status .label { color: #5599cc; }
+        #status .value { color: #e0f0ff; font-weight: 600; }
+
+        #sat-panel {
+            position: absolute; top: 60px; right: 20px; bottom: 20px; width: 220px;
+            background: rgba(0,0,10,0.75); border: 1px solid #1a3a5c;
+            border-radius: 8px; overflow-y: auto; z-index: 10; font-size: 0.78em;
+        }
+        #sat-panel h3 { padding: 10px 14px; color: #7ecfff; border-bottom: 1px solid #1a3a5c; letter-spacing: 1px; font-size: 0.95em; position: sticky; top: 0; background: rgba(0,0,20,0.95); }
+        .sat-row { display: grid; grid-template-columns: 30px 1fr 1fr; padding: 6px 14px; border-bottom: 1px solid rgba(255,255,255,0.04); align-items: center; cursor: pointer; transition: background 0.15s; }
+        .sat-row:hover { background: rgba(100,150,255,0.1); }
+        .sat-row .prn { color: #7ecfff; font-weight: 700; }
+        .sat-row .coords { color: #aac; font-size: 0.9em; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; }
+        .dot-healthy { background: #00ff88; }
+        .dot-unhealthy { background: #ff4444; }
+
+        #tooltip {
+            position: absolute; background: rgba(0,5,20,0.92);
+            border: 1px solid #3a6aaa; border-radius: 6px;
+            padding: 10px 14px; font-size: 0.8em; pointer-events: none;
+            display: none; z-index: 20; line-height: 1.8; min-width: 160px;
+        }
+        #tooltip .t-prn { color: #7ecfff; font-size: 1.1em; font-weight: 700; margin-bottom: 4px; }
+        #tooltip .t-label { color: #5599cc; }
+        #tooltip .t-val { color: #e0f0ff; }
+
+        #loading {
+            position: absolute; inset: 0; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; background: #000; z-index: 100;
+        }
+        #loading .spinner { width: 50px; height: 50px; border: 3px solid #1a3a5c; border-top-color: #7ecfff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 16px; }
+        #loading p { color: #5599cc; letter-spacing: 2px; font-size: 0.9em; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #sat-panel::-webkit-scrollbar { width: 4px; }
+        #sat-panel::-webkit-scrollbar-track { background: transparent; }
+        #sat-panel::-webkit-scrollbar-thumb { background: #1a3a5c; border-radius: 2px; }
+    </style>
+</head>
+<body>
+
+<div id="loading"><div class="spinner"></div><p>LOADING LIVE DATA...</p></div>
+<div id="canvas-container"></div>
+
+<div id="topbar">
+    <h1>🛰️ GPS LIVE SKY VIEW</h1>
+    <a href="/">← Calculator</a>
+</div>
+
+<div id="status">
+    <div><span class="label">UTC TIME </span> <span class="value" id="st-time">—</span></div>
+    <div><span class="label">ALMANAC  </span> <span class="value" id="st-almanac">—</span></div>
+    <div><span class="label">SATS     </span> <span class="value" id="st-count">—</span></div>
+    <div><span class="label">UPDATE   </span> <span class="value">every 5s</span></div>
+</div>
+
+<div id="sat-panel">
+    <h3>SATELLITES</h3>
+    <div id="sat-list"></div>
+</div>
+
+<div id="tooltip"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ── Renderer ─────────────────────────────────────────────────────
+const container = document.getElementById('canvas-container');
+const renderer  = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x000000);
+container.appendChild(renderer.domElement);
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(0, 0, 22);
+
+// ── Earth ─────────────────────────────────────────────────────────
+const EARTH_R = 6.371;
+const earthGeo = new THREE.SphereGeometry(EARTH_R, 64, 64);
+let earth;
+
+new THREE.TextureLoader().load(
+    'https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/textures/planets/earth_atmos_2048.jpg',
+    tex => {
+        earth = new THREE.Mesh(earthGeo, new THREE.MeshPhongMaterial({ map: tex, specular: 0x111133, shininess: 8 }));
+        scene.add(earth);
+    },
+    undefined,
+    () => {
+        earth = new THREE.Mesh(earthGeo, new THREE.MeshPhongMaterial({ color: 0x1a4a8a, emissive: 0x0a1a3a }));
+        scene.add(earth);
+    }
+);
+
+// Atmosphere
+scene.add(new THREE.Mesh(
+    new THREE.SphereGeometry(EARTH_R * 1.03, 64, 64),
+    new THREE.MeshPhongMaterial({ color: 0x2255aa, transparent: true, opacity: 0.09, side: THREE.FrontSide })
+));
+
+// ── Lighting ──────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x446688, 1.0));
+const sun = new THREE.DirectionalLight(0xffeedd, 1.6);
+sun.position.set(50, 20, 30);
+scene.add(sun);
+scene.add(Object.assign(new THREE.DirectionalLight(0x223355, 0.4), { position: new THREE.Vector3(-40, -10, -20) }));
+
+// ── Coordinate helper ─────────────────────────────────────────────
+// ECEF (Z-up) → Three.js (Y-up)
+function e2t(x, y, z) { return new THREE.Vector3(x, z, y); }
+
+// ── Satellite sprite factory ──────────────────────────────────────
+const SPRITE_W = 280, SPRITE_H = 100;
+
+function makeSatCanvas(prn, healthy) {
+    const canvas = document.createElement('canvas');
+    canvas.width  = SPRITE_W;
+    canvas.height = SPRITE_H;
+    const ctx = canvas.getContext('2d');
+    const col = healthy ? '#00ff88' : '#ff5555';
+    const cx = 52, cy = SPRITE_H / 2;
+
+    // --- body ---
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.roundRect(cx - 11, cy - 8, 22, 16, 3);
+    ctx.fill();
+
+    // --- solar panels ---
+    const panelCol = '#2255bb';
+    ctx.fillStyle = panelCol;
+    ctx.fillRect(cx - 38, cy - 5, 25, 10);   // left
+    ctx.fillRect(cx + 13, cy - 5, 25, 10);   // right
+    // panel struts
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(cx - 12, cy); ctx.lineTo(cx - 14, cy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx + 12, cy); ctx.lineTo(cx + 14, cy); ctx.stroke();
+    // panel grid lines
+    ctx.strokeStyle = '#3377ee';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 3; i++) {
+        ctx.beginPath(); ctx.moveTo(cx - 38 + i*8, cy - 5); ctx.lineTo(cx - 38 + i*8, cy + 5); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx + 13 + i*8, cy - 5); ctx.lineTo(cx + 13 + i*8, cy + 5); ctx.stroke();
+    }
+
+    // --- antenna dish ---
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy - 12, 7, Math.PI, 2 * Math.PI); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, cy - 8); ctx.lineTo(cx, cy - 5); ctx.stroke();
+
+    // --- PRN label ---
+    ctx.font = 'bold 30px monospace';
+    ctx.fillStyle = '#7ecfff';
+    ctx.shadowColor = '#003366';
+    ctx.shadowBlur = 6;
+    ctx.fillText('G' + String(prn).padStart(2, '0'), 105, cy + 11);
+
+    return canvas;
+}
+
+function createSatSprite(prn, healthy) {
+    const tex = new THREE.CanvasTexture(makeSatCanvas(prn, healthy));
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(2.2, 0.79, 1);
+    sprite.userData.prn = prn;
+    return sprite;
+}
+
+// ── Trail system ──────────────────────────────────────────────────
+const TRAIL_MAX = 80;   // keep last 80 recorded positions per satellite
+
+function createTrail(healthy) {
+    const positions = new Float32Array(TRAIL_MAX * 3); // pre-allocated
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setDrawRange(0, 0);
+    const mat = new THREE.LineBasicMaterial({
+        color: healthy ? 0x00cc66 : 0xcc3333,
+        transparent: true,
+        opacity: 0.55,
+    });
+    const line = new THREE.Line(geo, mat);
+    return { line, history: [] };
+}
+
+function pushTrail(trail, pos, healthy) {
+    trail.history.push([pos.x, pos.y, pos.z]);
+    if (trail.history.length > TRAIL_MAX) trail.history.shift();
+
+    const attr = trail.line.geometry.attributes.position;
+    trail.history.forEach(([x, y, z], i) => attr.setXYZ(i, x, y, z));
+    attr.needsUpdate = true;
+    trail.line.geometry.setDrawRange(0, trail.history.length);
+    trail.line.material.color.setHex(healthy ? 0x00cc66 : 0xcc3333);
+}
+
+// ── Per-satellite objects ─────────────────────────────────────────
+const satObjects = {};  // prn → { sprite, trail }
+const satData    = {};  // prn → latest API data
+
+// ── Raycasting / hover ────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse     = new THREE.Vector2();
+const tooltip   = document.getElementById('tooltip');
+
+function checkHover(cx, cy) {
+    mouse.x =  (cx / window.innerWidth)  * 2 - 1;
+    mouse.y = -(cy / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const sprites = Object.values(satObjects).map(o => o.sprite);
+    const hits = raycaster.intersectObjects(sprites);
+    if (hits.length) {
+        const prn = hits[0].object.userData.prn;
+        const d   = satData[prn];
+        tooltip.style.display = 'block';
+        tooltip.style.left = (cx + 14) + 'px';
+        tooltip.style.top  = (cy - 10) + 'px';
+        tooltip.innerHTML = `
+            <div class="t-prn">PRN ${prn}</div>
+            <div><span class="t-label">Health: </span><span class="t-val">${d.healthy ? '✓ Healthy' : '✗ Unhealthy'}</span></div>
+            <div><span class="t-label">Lat: </span><span class="t-val">${d.lat}°</span></div>
+            <div><span class="t-label">Lon: </span><span class="t-val">${d.lon}°</span></div>
+            <div><span class="t-label">Alt: </span><span class="t-val">${d.alt_km} km</span></div>`;
+    } else {
+        tooltip.style.display = 'none';
+    }
+}
+
+// ── Drag / zoom ───────────────────────────────────────────────────
+let isDragging = false, prevX = 0, prevY = 0;
+let rotX = 0.3, rotY = 0, zoom = 22;
+
+renderer.domElement.addEventListener('mousedown', e  => { isDragging = true; prevX = e.clientX; prevY = e.clientY; });
+renderer.domElement.addEventListener('mouseup',   ()  => { isDragging = false; });
+renderer.domElement.addEventListener('mouseleave',()  => { isDragging = false; });
+renderer.domElement.addEventListener('mousemove', e  => {
+    if (isDragging) {
+        rotY += (e.clientX - prevX) * 0.005;
+        rotX += (e.clientY - prevY) * 0.005;
+        rotX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, rotX));
+        prevX = e.clientX; prevY = e.clientY;
+    }
+    checkHover(e.clientX, e.clientY);
+});
+renderer.domElement.addEventListener('wheel', e => {
+    zoom = Math.max(9, Math.min(50, zoom + e.deltaY * 0.02));
+});
+
+// ── Data update ───────────────────────────────────────────────────
+function updateSatellites(satellites) {
+    const seen = new Set();
+    for (const sat of satellites) {
+        seen.add(sat.prn);
+        satData[sat.prn] = sat;
+
+        const pos = e2t(sat.x / 1e6, sat.y / 1e6, sat.z / 1e6);
+
+        if (!satObjects[sat.prn]) {
+            const sprite = createSatSprite(sat.prn, sat.healthy);
+            const trail  = createTrail(sat.healthy);
+            scene.add(sprite);
+            scene.add(trail.line);
+            satObjects[sat.prn] = { sprite, trail };
+        }
+
+        const obj = satObjects[sat.prn];
+        obj.sprite.position.copy(pos);
+
+        // Refresh sprite canvas if health changed
+        const prevHealthy = obj.trail.line.material.color.getHex() === 0x00cc66;
+        if (prevHealthy !== sat.healthy) {
+            obj.sprite.material.map = new THREE.CanvasTexture(makeSatCanvas(sat.prn, sat.healthy));
+            obj.sprite.material.map.needsUpdate = true;
+        }
+
+        pushTrail(obj.trail, pos, sat.healthy);
+    }
+
+    // Remove satellites that disappeared from the almanac
+    for (const prn of Object.keys(satObjects)) {
+        if (!seen.has(parseInt(prn))) {
+            scene.remove(satObjects[prn].sprite);
+            scene.remove(satObjects[prn].trail.line);
+            delete satObjects[prn];
+            delete satData[prn];
+        }
+    }
+
+    document.getElementById('loading').style.display = 'none';
+}
+
+function updateSatPanel(satellites) {
+    const sorted = [...satellites].sort((a, b) => a.prn - b.prn);
+    document.getElementById('sat-list').innerHTML = sorted.map(s => `
+        <div class="sat-row" onmouseenter="highlightSat(${s.prn})" onmouseleave="clearHighlight()">
+            <div><div class="dot ${s.healthy ? 'dot-healthy' : 'dot-unhealthy'}"></div></div>
+            <div class="prn">G${String(s.prn).padStart(2,'0')}</div>
+            <div class="coords">${s.lat}°<br>${s.lon}°</div>
+        </div>`).join('');
+}
+
+function highlightSat(prn) { if (satObjects[prn]) satObjects[prn].sprite.scale.setScalar(1.6); }
+function clearHighlight()   { for (const o of Object.values(satObjects)) o.sprite.scale.set(2.2, 0.79, 1); }
+
+// ── Live fetch ────────────────────────────────────────────────────
+async function fetchLive() {
+    try {
+        const res  = await fetch('/api/live-positions');
+        const data = await res.json();
+        if (!res.ok) return;
+        document.getElementById('st-time').textContent    = data.time;
+        document.getElementById('st-almanac').textContent = data.almanac_date;
+        document.getElementById('st-count').textContent   = data.satellites.length;
+        updateSatellites(data.satellites);
+        updateSatPanel(data.satellites);
+    } catch (e) { console.error('Live fetch error:', e); }
+}
+
+// ── Render loop ───────────────────────────────────────────────────
+function animate() {
+    requestAnimationFrame(animate);
+    camera.position.x = zoom * Math.sin(rotY) * Math.cos(rotX);
+    camera.position.y = zoom * Math.sin(rotX);
+    camera.position.z = zoom * Math.cos(rotY) * Math.cos(rotX);
+    camera.lookAt(0, 0, 0);
+    if (earth) earth.rotation.y += 0.0003;
+    renderer.render(scene, camera);
+}
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+fetchLive();
+setInterval(fetchLive, 5000);
+animate();
+</script>
+</body>
+</html>
