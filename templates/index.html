@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Calculator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .card h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 1em;
+            transition: border-color 0.2s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            color: #667eea;
+            margin-top: 15px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .alert {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            display: none;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert.error {
+            background: #fee;
+            color: #c33;
+            border: 1px solid #fcc;
+        }
+
+        .alert.success {
+            background: #efe;
+            color: #3c3;
+            border: 1px solid #cfc;
+        }
+
+        .results {
+            background: #f9f9f9;
+            border-radius: 6px;
+            padding: 20px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .results.show {
+            display: block;
+        }
+
+        .result-row {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .result-row:last-child {
+            border-bottom: none;
+        }
+
+        .result-label {
+            font-weight: 600;
+            color: #555;
+        }
+
+        .result-value {
+            color: #333;
+            font-family: 'Courier New', monospace;
+        }
+
+        .satellite-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        .satellite-table th {
+            background: #f5f5f5;
+            padding: 10px;
+            text-align: left;
+            border-bottom: 2px solid #ddd;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .satellite-table td {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .satellite-table tr:hover {
+            background: #fafafa;
+        }
+
+        .health-ok {
+            color: #3c3;
+            font-weight: 600;
+        }
+
+        .health-bad {
+            color: #c33;
+            font-weight: 600;
+        }
+
+        .info-box {
+            background: #e8f4f8;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            color: #555;
+        }
+
+        .info-box strong {
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🛰️ GPS Calculator</h1>
+            <p class="subtitle">YUMA Almanac Position Calculator</p>
+        </header>
+
+        <div class="grid">
+            <!-- Load Almanac Card -->
+            <div class="card">
+                <h2>Load Almanac</h2>
+                <div class="alert error" id="loadAlert"></div>
+                <div class="alert success" id="loadSuccess"></div>
+
+                <div class="form-group">
+                    <label for="dateInput">Date (YYYY-MM-DD)</label>
+                    <input type="text" id="dateInput" placeholder="e.g., 2026-04-19 or 'today'">
+                </div>
+
+                <button id="loadBtn" onclick="loadAlmanac()">Load Almanac</button>
+                <div class="loading" id="loadLoading">
+                    <span class="spinner"></span>
+                    Loading...
+                </div>
+
+                <div id="almanacInfo" style="display: none; margin-top: 20px;">
+                    <div class="info-box">
+                        <strong>Loaded:</strong> <span id="infoDate"></span><br>
+                        <strong>GPS Week:</strong> <span id="infoWeek"></span><br>
+                        <strong>Satellites:</strong> <span id="infoCount"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Calculate Position Card -->
+            <div class="card">
+                <h2>Calculate Position</h2>
+                <div class="alert error" id="calcAlert"></div>
+
+                <div class="form-group">
+                    <label for="prnInput">PRN Number (1-32)</label>
+                    <input type="number" id="prnInput" min="1" max="32" placeholder="e.g., 1">
+                </div>
+
+                <div class="form-group">
+                    <label for="timeInput">Time (YYYY-MM-DD HH:MM:SS)</label>
+                    <input type="text" id="timeInput" placeholder="e.g., 2026-04-19 12:00:00 or 'now'">
+                </div>
+
+                <button id="calcBtn" onclick="calculatePosition()" disabled>Calculate</button>
+                <div class="loading" id="calcLoading">
+                    <span class="spinner"></span>
+                    Calculating...
+                </div>
+            </div>
+        </div>
+
+        <!-- Satellites List Card -->
+        <div class="card">
+            <h2>Satellites</h2>
+            <div id="satellitesContainer" style="display: none;">
+                <table class="satellite-table">
+                    <thead>
+                        <tr>
+                            <th>PRN</th>
+                            <th>Health</th>
+                            <th>Eccentricity</th>
+                            <th>√A (m)</th>
+                            <th>Inclination (°)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="satellitesList"></tbody>
+                </table>
+            </div>
+            <div id="noSatellites" style="text-align: center; color: #999; padding: 40px;">
+                Load an almanac to see satellites
+            </div>
+        </div>
+
+        <!-- Results Card -->
+        <div class="card results" id="resultsCard">
+            <h2>Position Results</h2>
+            <div id="resultsContent"></div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize
+        updateCalculateButton();
+
+        function hideAlert(id) {
+            setTimeout(() => {
+                document.getElementById(id).classList.remove('show');
+            }, 5000);
+        }
+
+        function showError(containerId, message) {
+            const alert = document.getElementById(containerId);
+            alert.textContent = '❌ ' + message;
+            alert.classList.add('show');
+            hideAlert(containerId);
+        }
+
+        function showSuccess(containerId, message) {
+            const alert = document.getElementById(containerId);
+            alert.textContent = '✓ ' + message;
+            alert.classList.add('show');
+            hideAlert(containerId);
+        }
+
+        async function loadAlmanac() {
+            const dateInput = document.getElementById('dateInput').value || 'today';
+            const btn = document.getElementById('loadBtn');
+            const loading = document.getElementById('loadLoading');
+
+            btn.disabled = true;
+            loading.classList.add('show');
+            document.getElementById('loadAlert').classList.remove('show');
+            document.getElementById('loadSuccess').classList.remove('show');
+
+            try {
+                const response = await fetch('/api/load-almanac', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ date: dateInput })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showError('loadAlert', data.error || 'Failed to load almanac');
+                    return;
+                }
+
+                showSuccess('loadSuccess', `Loaded ${data.count} satellites`);
+
+                // Update info box
+                document.getElementById('infoDate').textContent = dateInput;
+                document.getElementById('infoWeek').textContent = data.week;
+                document.getElementById('infoCount').textContent = data.count;
+                document.getElementById('almanacInfo').style.display = 'block';
+
+                // Load satellites list
+                await loadSatellitesList();
+
+                // Enable calculate button
+                updateCalculateButton();
+
+            } catch (error) {
+                showError('loadAlert', 'Network error: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                loading.classList.remove('show');
+            }
+        }
+
+        async function loadSatellitesList() {
+            try {
+                const response = await fetch('/api/satellites');
+                const data = await response.json();
+
+                if (!response.ok) return;
+
+                const tbody = document.getElementById('satellitesList');
+                tbody.innerHTML = '';
+
+                data.satellites.forEach(sat => {
+                    const row = tbody.insertRow();
+                    const healthClass = sat.health === 'Healthy' ? 'health-ok' : 'health-bad';
+
+                    row.innerHTML = `
+                        <td>${sat.id}</td>
+                        <td><span class="${healthClass}">${sat.health}</span></td>
+                        <td>${sat.e}</td>
+                        <td>${sat.sqA}</td>
+                        <td>${sat.inc}</td>
+                    `;
+                });
+
+                document.getElementById('satellitesList').parentElement.parentElement.style.display = 'block';
+                document.getElementById('noSatellites').style.display = 'none';
+
+            } catch (error) {
+                console.error('Error loading satellites:', error);
+            }
+        }
+
+        async function calculatePosition() {
+            const prn = document.getElementById('prnInput').value;
+            const timeInput = document.getElementById('timeInput').value || 'now';
+            const btn = document.getElementById('calcBtn');
+            const loading = document.getElementById('calcLoading');
+
+            if (!prn) {
+                showError('calcAlert', 'Please enter a PRN number');
+                return;
+            }
+
+            btn.disabled = true;
+            loading.classList.add('show');
+            document.getElementById('calcAlert').classList.remove('show');
+
+            try {
+                const response = await fetch('/api/calculate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prn: parseInt(prn), time: timeInput })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showError('calcAlert', data.error || 'Calculation failed');
+                    return;
+                }
+
+                displayResults(data);
+
+            } catch (error) {
+                showError('calcAlert', 'Network error: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                loading.classList.remove('show');
+            }
+        }
+
+        function displayResults(data) {
+            const html = `
+                <div class="result-row">
+                    <div class="result-label">PRN</div>
+                    <div class="result-value">${data.prn}</div>
+                </div>
+                <div class="result-row">
+                    <div class="result-label">Time (UTC)</div>
+                    <div class="result-value">${data.time}</div>
+                </div>
+                <div class="result-row">
+                    <div class="result-label">X (ECEF)</div>
+                    <div class="result-value">${data.ecef.x} m</div>
+                </div>
+                <div class="result-row">
+                    <div class="result-label">Y (ECEF)</div>
+                    <div class="result-value">${data.ecef.y} m</div>
+                </div>
+                <div class="result-row">
+                    <div class="result-label">Z (ECEF)</div>
+                    <div class="result-value">${data.ecef.z} m</div>
+                </div>
+                <div class="result-row">
+                    <div class="result-label">Distance</div>
+                    <div class="result-value">${data.ecef.r} km</div>
+                </div>
+                <div class="result-row">
+                    <div class="result-label">Latitude</div>
+                    <div class="result-value">${data.geodetic.latitude}°</div>
+                </div>
+                <div class="result-row">
+                    <div class="result-label">Longitude</div>
+                    <div class="result-value">${data.geodetic.longitude}°</div>
+                </div>
+                <div class="result-row">
+                    <div class="result-label">Altitude</div>
+                    <div class="result-value">${data.geodetic.altitude} km</div>
+                </div>
+            `;
+
+            document.getElementById('resultsContent').innerHTML = html;
+            document.getElementById('resultsCard').classList.add('show');
+        }
+
+        function updateCalculateButton() {
+            const btn = document.getElementById('calcBtn');
+            // Button is enabled if almanac is loaded (we could check API, but for now enable it)
+            btn.disabled = false;
+        }
+
+        // Allow Enter key on inputs
+        document.getElementById('dateInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') loadAlmanac();
+        });
+
+        document.getElementById('timeInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') calculatePosition();
+        });
+    </script>
+</body>
+</html>
