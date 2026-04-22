@@ -30,6 +30,11 @@ def _load_tle_constellation(group, label_prefix):
 
 @app.route('/')
 def index():
+    return render_template('live.html')
+
+
+@app.route('/calculator')
+def calculator():
     return render_template('index.html')
 
 
@@ -199,6 +204,7 @@ def live_positions():
                 geo = geodetic(pos['x'], pos['y'], pos['z'])
                 positions.append({
                     'prn': tle['id'], 'label': tle['label'], 'constellation': constellation,
+                    'name': tle['name'],
                     'healthy': True,
                     'x': pos['x'], 'y': pos['y'], 'z': pos['z'],
                     'lat': round(geo['lat'], 4), 'lon': round(geo['lon'], 4), 'alt_km': round(geo['alt'] / 1000, 1),

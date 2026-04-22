@@ -69,23 +69,41 @@
         #recv-status { margin-top: 8px; font-size: 0.8em; color: #5599cc; min-height: 1.2em; }
 
         /* ── Satellite panel ── */
-        #sat-panel { top: 60px; right: 20px; bottom: 20px; width: 230px; overflow-y: auto; font-size: 0.82em; }
+        #sat-panel { top: 60px; right: 20px; bottom: 20px; width: 280px; overflow-y: auto; font-size: 0.82em; }
         #sat-panel h3 { padding: 10px 14px; color: #7ecfff; border-bottom: 1px solid #1a3a5c; letter-spacing: 1px; font-size: 0.95em; position: sticky; top: 0; background: rgba(0,0,20,0.97); }
-        #panel-sub { padding: 4px 14px 6px; font-size: 0.78em; color: #5599cc; border-bottom: 1px solid #1a3a5c; background: rgba(0,0,20,0.97); position: sticky; top: 37px; }
+        #panel-sub { padding: 4px 14px 6px; font-size: 0.78em; color: #5599cc; border-bottom: 1px solid #1a3a5c; background: rgba(0,0,20,0.97); position: sticky; top: 37px; line-height: 1.7; }
+        #panel-sub .sig-sum { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
         #col-header { padding: 5px 14px; border-bottom: 1px solid #1a3a5c; font-size: 0.75em; color: #4477aa; position: sticky; top: 57px; background: rgba(0,0,15,0.97); display: grid; }
-        #col-header.no-recv { grid-template-columns: 20px 1fr 1fr; }
-        #col-header.recv    { grid-template-columns: 20px 46px 1fr 54px; }
-        .sat-row { padding: 6px 14px; border-bottom: 1px solid rgba(255,255,255,0.04); align-items: center; cursor: pointer; transition: background 0.15s; display: grid; }
-        .sat-row.no-recv { grid-template-columns: 20px 1fr 1fr; }
-        .sat-row.recv    { grid-template-columns: 20px 46px 1fr 54px; }
+        #col-header.no-recv { grid-template-columns: 14px 40px 1fr; }
+        #col-header.recv    { grid-template-columns: 14px 40px 52px 42px; }
+        .sat-row { padding: 5px 14px; border-bottom: 1px solid rgba(255,255,255,0.04); align-items: start; cursor: pointer; transition: background 0.15s; display: grid; gap: 2px 4px; }
+        .sat-row.no-recv { grid-template-columns: 14px 40px 1fr; }
+        .sat-row.recv    { grid-template-columns: 14px 40px 52px 42px; }
         .sat-row:hover { background: rgba(100,150,255,0.1); }
-        .prn  { color: #7ecfff; font-weight: 700; font-size: 0.88em; }
-        .cell { color: #aac; font-size: 0.8em; }
-        .dot  { width: 7px; height: 7px; border-radius: 50%; margin-top: 3px; }
+        .prn  { color: #7ecfff; font-weight: 700; font-size: 0.88em; line-height: 1.4; }
+        .cell { color: #aac; font-size: 0.8em; line-height: 1.5; }
+        .dot  { width: 7px; height: 7px; border-radius: 50%; margin-top: 4px; }
         .dot-ok   { background: #00ff88; }
         .dot-glo  { background: #00ddff; }
         .dot-bei  { background: #ffcc00; }
         .dot-fail { background: #ff4444; }
+        /* Signal badges */
+        .sigs { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 2px; grid-column: 2 / -1; }
+        .sig-b { font-size: 0.68em; padding: 1px 4px; border-radius: 3px; border: 1px solid; white-space: nowrap; font-weight: 600; }
+        /* Constellation toggles */
+        #const-toggles { display: flex; gap: 6px; }
+        .tog-btn {
+            padding: 5px 12px; border-radius: 20px; border: 1px solid; cursor: pointer;
+            font-size: 0.78em; font-weight: 700; letter-spacing: 1px; transition: all 0.2s;
+            opacity: 0.4;
+        }
+        .tog-btn.active { opacity: 1; }
+        .tog-gps { color: #00ff88; border-color: #00ff88; background: rgba(0,255,136,0.08); }
+        .tog-gps.active { background: rgba(0,255,136,0.18); }
+        .tog-glo { color: #00ddff; border-color: #00ddff; background: rgba(0,221,255,0.08); }
+        .tog-glo.active { background: rgba(0,221,255,0.18); }
+        .tog-bei { color: #ffcc00; border-color: #ffcc00; background: rgba(255,204,0,0.08); }
+        .tog-bei.active { background: rgba(255,204,0,0.18); }
 
         #tooltip {
             position: absolute; background: rgba(0,5,20,0.93); border: 1px solid #3a6aaa;
@@ -112,7 +130,12 @@
 
 <div id="topbar">
     <h1>🛰️ GPS / GLONASS / BeiDou LIVE SKY VIEW</h1>
-    <a href="/">← Calculator</a>
+    <div id="const-toggles">
+        <button id="tog-gps" class="tog-btn tog-gps active" onclick="toggleConst('GPS')">GPS</button>
+        <button id="tog-glo" class="tog-btn tog-glo active" onclick="toggleConst('GLONASS')">GLO</button>
+        <button id="tog-bei" class="tog-btn tog-bei active" onclick="toggleConst('BEIDOU')">BDS</button>
+    </div>
+    <a href="/calculator">⚙ Calculator</a>
 </div>
 
 <div class="card" id="status">
@@ -286,6 +309,65 @@ function makeLinkSprite(range, elev) {
     return spr;
 }
 
+// ── Signal data ───────────────────────────────────────────────────────
+const GPS_SIGNAL_MAP = {
+    // Block IIR — L1CA only
+    11:['L1CA'], 13:['L1CA'], 14:['L1CA'], 20:['L1CA'], 21:['L1CA'], 22:['L1CA'],
+    // Block IIR-M — L1CA + L2C
+    12:['L1CA','L2C'], 15:['L1CA','L2C'], 17:['L1CA','L2C'], 29:['L1CA','L2C'], 31:['L1CA','L2C'],
+    // Block IIF — L1CA + L2C + L5
+    1:['L1CA','L2C','L5'], 3:['L1CA','L2C','L5'], 6:['L1CA','L2C','L5'], 8:['L1CA','L2C','L5'],
+    9:['L1CA','L2C','L5'], 10:['L1CA','L2C','L5'], 24:['L1CA','L2C','L5'], 25:['L1CA','L2C','L5'],
+    26:['L1CA','L2C','L5'], 27:['L1CA','L2C','L5'], 30:['L1CA','L2C','L5'], 32:['L1CA','L2C','L5'],
+    // Block IIIA — L1CA + L1C + L2C + L5
+    2:['L1CA','L1C','L2C','L5'], 4:['L1CA','L1C','L2C','L5'], 5:['L1CA','L1C','L2C','L5'],
+    7:['L1CA','L1C','L2C','L5'], 18:['L1CA','L1C','L2C','L5'], 23:['L1CA','L1C','L2C','L5'],
+    28:['L1CA','L1C','L2C','L5'],
+};
+const SIG_STYLE = {
+    L1CA:'color:#4e9eff;border-color:#4e9eff66', L1C:'color:#82c0ff;border-color:#82c0ff66',
+    L2C:'color:#2ec4a9;border-color:#2ec4a966',  L5:'color:#b87fff;border-color:#b87fff66',
+    L1OF:'color:#00ddff;border-color:#00ddff66', L2OF:'color:#0099bb;border-color:#0099bb66',
+    L3OC:'color:#00ffdd;border-color:#00ffdd66',
+    B1I:'color:#ffcc00;border-color:#ffcc0066',  B2I:'color:#ffaa00;border-color:#ffaa0066',
+    B3I:'color:#ff8800;border-color:#ff880066',  B1C:'color:#ffe066;border-color:#ffe06666',
+    B2a:'color:#ffdd44;border-color:#ffdd4466',
+};
+function getSignals(sat) {
+    if (sat.constellation === 'GPS') return GPS_SIGNAL_MAP[sat.prn] || ['L1CA'];
+    if (sat.constellation === 'GLONASS') {
+        const n = (sat.name || '').toUpperCase();
+        return n.includes('-K') ? ['L1OF','L2OF','L3OC'] : ['L1OF','L2OF'];
+    }
+    if (sat.constellation === 'BEIDOU') {
+        const n = (sat.name || '').toUpperCase();
+        return (n.includes('BEIDOU-3') || n.includes('BDS-3')) ? ['B1C','B2a','B3I'] : ['B1I','B2I','B3I'];
+    }
+    return [];
+}
+function sigBadges(signals) {
+    return '<div class="sigs">' + signals.map(s => {
+        const st = SIG_STYLE[s] || 'color:#aaa;border-color:#555';
+        return `<span class="sig-b" style="${st}">${s}</span>`;
+    }).join('') + '</div>';
+}
+
+// ── Constellation visibility ──────────────────────────────────────────
+const enabledConst = { GPS: true, GLONASS: true, BEIDOU: true };
+function toggleConst(c) {
+    enabledConst[c] = !enabledConst[c];
+    const id = c === 'GPS' ? 'tog-gps' : c === 'GLONASS' ? 'tog-glo' : 'tog-bei';
+    document.getElementById(id).classList.toggle('active', enabledConst[c]);
+    for (const [key, obj] of Object.entries(sats)) {
+        const d = satData[key];
+        if (d && d.constellation === c) {
+            obj.group.visible = enabledConst[c];
+            obj.trail.line.visible = enabledConst[c];
+        }
+    }
+    updatePanel(lastSatellites);
+}
+
 // ── Satellite objects ─────────────────────────────────────────────────
 const SAT_GEO  = new THREE.SphereGeometry(0.14, 8, 8);
 const MAT_OK   = new THREE.MeshPhongMaterial({ color: 0x00ff88, emissive: 0x006633 });
@@ -411,14 +493,15 @@ function clearReceiver() {
 let lastSatellites = [];
 
 function updatePanel(satsArr) {
-    const sub = document.getElementById('panel-sub');
-    const hdr = document.getElementById('col-header');
-    const lst = document.getElementById('sat-list');
+    const sub  = document.getElementById('panel-sub');
+    const hdr  = document.getElementById('col-header');
+    const lst  = document.getElementById('sat-list');
+    const vis0 = satsArr.filter(s => enabledConst[s.constellation]);
     if (!receiver) {
-        sub.textContent = 'All satellites';
+        sub.textContent = 'All satellites (' + vis0.length + ')';
         hdr.className   = 'no-recv';
         hdr.innerHTML   = '<span></span><span>ID</span><span>Lat / Lon</span>';
-        lst.innerHTML   = [...satsArr].sort((a, b) => {
+        lst.innerHTML   = [...vis0].sort((a, b) => {
             if (a.constellation !== b.constellation) return a.constellation < b.constellation ? -1 : 1;
             return a.prn - b.prn;
         }).map(s => {
@@ -428,15 +511,21 @@ function updatePanel(satsArr) {
                 <div><div class="dot ${dotCls}"></div></div>
                 <div class="prn" style="color:${prnColor}">${s.label}</div>
                 <div class="cell">${s.lat}°<br>${s.lon}°</div>
+                ${sigBadges(getSignals(s))}
             </div>`;
         }).join('');
     } else {
         const mask = elevMask();
-        const vis = satsArr
+        const vis = vis0
             .map(s => ({ ...s, ...rangeElev(receiver.ecef, s.x, s.y, s.z) }))
             .filter(s => s.elev >= mask)
             .sort((a, b) => b.elev - a.elev);
-        sub.textContent = 'In view: ' + vis.length + ' satellite' + (vis.length !== 1 ? 's' : '');
+        const sigCount = {};
+        for (const s of vis) for (const sig of getSignals(s)) sigCount[sig] = (sigCount[sig] || 0) + 1;
+        const sigSummary = Object.entries(sigCount).sort((a,b) => a[0].localeCompare(b[0]))
+            .map(([sig, n]) => { const st = SIG_STYLE[sig] || 'color:#aaa;border-color:#555'; return `<span class="sig-b" style="${st}">${sig} ×${n}</span>`; }).join('');
+        sub.innerHTML = 'In view: ' + vis.length + ' satellite' + (vis.length !== 1 ? 's' : '') +
+            (sigSummary ? '<div class="sig-sum">' + sigSummary + '</div>' : '');
         hdr.className   = 'recv';
         hdr.innerHTML   = '<span></span><span>ID</span><span>Range</span><span>Elev</span>';
         lst.innerHTML   = vis.map(s => {
@@ -448,6 +537,7 @@ function updatePanel(satsArr) {
                 <div class="prn" style="color:${prnColor}">${s.label}</div>
                 <div class="cell">${Math.round(s.range).toLocaleString()} km</div>
                 <div class="cell" style="color:${c}">${s.elev.toFixed(1)}°</div>
+                ${sigBadges(getSignals(s))}
             </div>`;
         }).join('');
     }
@@ -474,6 +564,8 @@ function updateSatellites(satellites) {
         }
         sats[sat.label].group.position.copy(pos);
         sats[sat.label].sphere.material = satMat(sat.constellation, sat.healthy);
+        sats[sat.label].group.visible      = enabledConst[sat.constellation];
+        sats[sat.label].trail.line.visible = enabledConst[sat.constellation];
         pushTrail(sats[sat.label].trail, pos);
     }
     for (const key of Object.keys(sats)) {
