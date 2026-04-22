@@ -180,6 +180,11 @@ def live():
     return render_template('live.html')
 
 
+@app.route('/cesium')
+def cesium_view():
+    return render_template('cesium.html')
+
+
 @app.route('/api/live-positions', methods=['GET'])
 def live_positions():
     global almanac_data, glo_data, bei_data, gal_data

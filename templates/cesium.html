@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS / GLONASS / BeiDou / Galileo — Cesium View</title>
+    <script>window.CESIUM_BASE_URL = 'https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/';</script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Cesium.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #000; color: #e0e0ff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow: hidden; height: 100vh; }
+        #cesiumContainer { position: absolute; inset: 0; }
+        .cesium-widget-credits { display: none !important; }
+
+        #topbar {
+            position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 20px;
+            background: linear-gradient(to bottom, rgba(0,0,10,0.9), transparent);
+        }
+        #topbar h1 { font-size: 1.2em; letter-spacing: 2px; color: #7ecfff; }
+        #topbar-right { display: flex; align-items: center; gap: 8px; }
+        #topbar a {
+            color: #aaa; text-decoration: none; font-size: 0.85em;
+            border: 1px solid #333; padding: 5px 12px; border-radius: 20px; transition: all 0.2s;
+        }
+        #topbar a:hover { color: #fff; border-color: #7ecfff; }
+        #topbar a.active-view { color: #7ecfff; border-color: #7ecfff; background: rgba(126,207,255,0.1); }
+
+        .card {
+            position: absolute; z-index: 10;
+            background: rgba(0,0,10,0.82);
+            border: 1px solid #1a3a5c;
+            border-radius: 8px;
+        }
+
+        #status { top: 60px; left: 20px; padding: 14px 18px; line-height: 1.9; min-width: 200px; font-size: 0.82em; }
+        #status .lbl { color: #5599cc; }
+        #status .val { color: #e0f0ff; font-weight: 600; }
+
+        #recv-panel { top: 325px; left: 20px; padding: 14px 16px; width: 240px; font-size: 0.82em; }
+        #recv-panel h3 { color: #7ecfff; letter-spacing: 1px; margin-bottom: 12px; font-size: 1em; }
+        .field-row { display: flex; align-items: center; margin-bottom: 8px; gap: 8px; }
+        .field-row label { color: #5599cc; width: 36px; font-size: 0.9em; }
+        .field-row input {
+            flex: 1; background: rgba(0,20,50,0.8); border: 1px solid #1a3a5c;
+            color: #e0f0ff; border-radius: 4px; padding: 5px 8px; font-size: 0.9em;
+        }
+        .field-row input:focus { outline: none; border-color: #7ecfff; }
+        .btn-row { display: flex; gap: 6px; margin-top: 10px; }
+        .btn { flex: 1; padding: 6px 0; border: none; border-radius: 4px; cursor: pointer; font-size: 0.8em; font-weight: 600; transition: opacity 0.2s; }
+        .btn:hover { opacity: 0.82; }
+        .btn-set   { background: #1a5a8a; color: #e0f0ff; }
+        .btn-geo   { background: #1a6a3a; color: #e0f0ff; }
+        .btn-clear { background: #4a1a1a; color: #ffaaaa; }
+        #recv-status { margin-top: 8px; font-size: 0.8em; color: #5599cc; min-height: 1.2em; }
+
+        #sat-panel { top: 60px; right: 20px; bottom: 20px; width: 280px; overflow-y: auto; font-size: 0.82em; }
+        #sat-panel h3 { padding: 10px 14px; color: #7ecfff; border-bottom: 1px solid #1a3a5c; letter-spacing: 1px; font-size: 0.95em; position: sticky; top: 0; background: rgba(0,0,20,0.97); }
+        #panel-sub { padding: 4px 14px 6px; font-size: 0.78em; color: #5599cc; border-bottom: 1px solid #1a3a5c; background: rgba(0,0,20,0.97); position: sticky; top: 37px; line-height: 1.7; }
+        #panel-sub .sig-sum { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+        #col-header { padding: 5px 14px; border-bottom: 1px solid #1a3a5c; font-size: 0.75em; color: #4477aa; position: sticky; top: 57px; background: rgba(0,0,15,0.97); display: grid; }
+        #col-header.no-recv { grid-template-columns: 14px 40px 1fr; }
+        #col-header.recv    { grid-template-columns: 14px 40px 52px 42px; }
+        .sat-row { padding: 5px 14px; border-bottom: 1px solid rgba(255,255,255,0.04); align-items: start; cursor: pointer; transition: background 0.15s; display: grid; gap: 2px 4px; }
+        .sat-row.no-recv { grid-template-columns: 14px 40px 1fr; }
+        .sat-row.recv    { grid-template-columns: 14px 40px 52px 42px; }
+        .sat-row:hover { background: rgba(100,150,255,0.1); }
+        .prn  { color: #7ecfff; font-weight: 700; font-size: 0.88em; line-height: 1.4; }
+        .cell { color: #aac; font-size: 0.8em; line-height: 1.5; }
+        .dot  { width: 7px; height: 7px; border-radius: 50%; margin-top: 4px; }
+        .dot-ok   { background: #00ff88; }
+        .dot-glo  { background: #00ddff; }
+        .dot-bei  { background: #ffcc00; }
+        .dot-gal  { background: #ff9500; }
+        .dot-fail { background: #ff4444; }
+        .sigs { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 2px; grid-column: 2 / -1; }
+        .sig-b { font-size: 0.68em; padding: 1px 4px; border-radius: 3px; border: 1px solid; white-space: nowrap; font-weight: 600; }
+
+        #const-toggles { display: flex; gap: 6px; }
+        .tog-btn { padding: 5px 12px; border-radius: 20px; border: 1px solid; cursor: pointer; font-size: 0.78em; font-weight: 700; letter-spacing: 1px; transition: all 0.2s; opacity: 0.4; }
+        .tog-btn.active { opacity: 1; }
+        .tog-gps { color: #00ff88; border-color: #00ff88; background: rgba(0,255,136,0.08); }
+        .tog-gps.active { background: rgba(0,255,136,0.18); }
+        .tog-glo { color: #00ddff; border-color: #00ddff; background: rgba(0,221,255,0.08); }
+        .tog-glo.active { background: rgba(0,221,255,0.18); }
+        .tog-bei { color: #ffcc00; border-color: #ffcc00; background: rgba(255,204,0,0.08); }
+        .tog-bei.active { background: rgba(255,204,0,0.18); }
+        .tog-gal { color: #ff9500; border-color: #ff9500; background: rgba(255,149,0,0.08); }
+        .tog-gal.active { background: rgba(255,149,0,0.18); }
+
+        #tooltip {
+            position: absolute; background: rgba(0,5,20,0.93); border: 1px solid #3a6aaa;
+            border-radius: 6px; padding: 10px 14px; font-size: 0.8em; pointer-events: none;
+            display: none; z-index: 20; line-height: 1.8; min-width: 170px;
+        }
+        #tooltip .t-prn { color: #7ecfff; font-size: 1.1em; font-weight: 700; margin-bottom: 4px; }
+        #tooltip .t-lbl { color: #5599cc; }
+        #tooltip .t-val { color: #e0f0ff; }
+
+        #loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #000; z-index: 100; }
+        #loading .spinner { width: 50px; height: 50px; border: 3px solid #1a3a5c; border-top-color: #7ecfff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 16px; }
+        #loading p { color: #5599cc; letter-spacing: 2px; font-size: 0.9em; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #sat-panel::-webkit-scrollbar { width: 4px; }
+        #sat-panel::-webkit-scrollbar-track { background: transparent; }
+        #sat-panel::-webkit-scrollbar-thumb { background: #1a3a5c; border-radius: 2px; }
+    </style>
+</head>
+<body>
+
+<div id="loading"><div class="spinner"></div><p>LOADING LIVE DATA...</p></div>
+<div id="cesiumContainer"></div>
+
+<div id="topbar">
+    <h1>🛰️ GPS / GLONASS / BeiDou / Galileo LIVE SKY VIEW</h1>
+    <div id="const-toggles">
+        <button id="tog-gps" class="tog-btn tog-gps active" onclick="toggleConst('GPS')">GPS</button>
+        <button id="tog-glo" class="tog-btn tog-glo active" onclick="toggleConst('GLONASS')">GLO</button>
+        <button id="tog-bei" class="tog-btn tog-bei active" onclick="toggleConst('BEIDOU')">BDS</button>
+        <button id="tog-gal" class="tog-btn tog-gal active" onclick="toggleConst('GALILEO')">GAL</button>
+    </div>
+    <div id="topbar-right">
+        <a href="/">Three.js View</a>
+        <a href="/cesium" class="active-view">Cesium View</a>
+        <a href="/calculator">⚙ Calculator</a>
+    </div>
+</div>
+
+<div class="card" id="status">
+    <div><span class="lbl">UTC TIME </span><span class="val" id="st-time">—</span></div>
+    <div><span class="lbl">ALMANAC  </span><span class="val" id="st-almanac">—</span></div>
+    <div><span class="lbl">GPS      </span><span class="val" id="st-gps">—</span></div>
+    <div><span class="lbl">GLONASS  </span><span class="val" id="st-glo">—</span></div>
+    <div><span class="lbl">BEIDOU   </span><span class="val" id="st-bei">—</span></div>
+    <div><span class="lbl">GALILEO  </span><span class="val" id="st-gal">—</span></div>
+    <div><span class="lbl">UPDATE   </span><span class="val">every 5s</span></div>
+</div>
+
+<div class="card" id="recv-panel">
+    <h3>📍 Receiver Location</h3>
+    <div class="field-row"><label>Lat</label><input id="inp-lat" type="number" step="0.0001" min="-90" max="90" placeholder="e.g. 32.0853"></div>
+    <div class="field-row"><label>Lon</label><input id="inp-lon" type="number" step="0.0001" min="-180" max="180" placeholder="e.g. 34.7818"></div>
+    <div class="field-row"><label>Alt m</label><input id="inp-alt" type="number" step="1" min="0" placeholder="0"></div>
+    <div class="btn-row">
+        <button class="btn btn-set" onclick="setReceiver()">Set</button>
+        <button class="btn btn-geo" onclick="geoLocate()">📡 My Location</button>
+        <button class="btn btn-clear" onclick="clearReceiver()">✕ Clear</button>
+    </div>
+    <div id="recv-status"></div>
+</div>
+
+<div class="card" id="sat-panel">
+    <h3>SATELLITES</h3>
+    <div id="panel-sub">All satellites</div>
+    <div id="col-header" class="no-recv">
+        <span></span><span>ID</span><span>Lat / Lon</span>
+    </div>
+    <div id="sat-list"></div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+// ── Cesium init ───────────────────────────────────────────────────────
+Cesium.Ion.defaultAccessToken = '';
+
+const viewer = new Cesium.Viewer('cesiumContainer', {
+    imageryProvider: new Cesium.TileMapServiceImageryProvider({
+        url: Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII'),
+    }),
+    baseLayerPicker: false,
+    geocoder: false,
+    homeButton: false,
+    sceneModePicker: false,
+    navigationHelpButton: false,
+    animation: false,
+    timeline: false,
+    fullscreenButton: false,
+    vrButton: false,
+    infoBox: false,
+    selectionIndicator: false,
+    terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+    skyBox: false,
+    skyAtmosphere: false,
+    backgroundColor: Cesium.Color.fromCssColorString('#000005'),
+});
+
+viewer.scene.globe.enableLighting = false;
+viewer.scene.backgroundColor = new Cesium.Color(0, 0, 0.02, 1);
+
+// Start zoomed out to see the full GPS constellation (~26,000 km altitude)
+viewer.camera.setView({
+    destination: Cesium.Cartesian3.fromDegrees(20, 25, 55000000),
+});
+
+// ── Helpers ───────────────────────────────────────────────────────────
+function satColor(constellation, healthy) {
+    if (constellation === 'GLONASS') return '#00ddff';
+    if (constellation === 'BEIDOU')  return '#ffcc00';
+    if (constellation === 'GALILEO') return '#ff9500';
+    return healthy ? '#00ff88' : '#ff5555';
+}
+
+function llhToEcef(lat, lon, altM) {
+    const a = 6378137, f = 1 / 298.257223563, e2 = 2 * f - f * f;
+    const lr = lat * Math.PI / 180, lo = lon * Math.PI / 180;
+    const sl = Math.sin(lr), cl = Math.cos(lr);
+    const N = a / Math.sqrt(1 - e2 * sl * sl);
+    return { x: (N + altM) * cl * Math.cos(lo), y: (N + altM) * cl * Math.sin(lo), z: (N * (1 - e2) + altM) * sl };
+}
+
+function rangeElev(recv, satX, satY, satZ) {
+    const dx = satX - recv.x, dy = satY - recv.y, dz = satZ - recv.z;
+    const rangM = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const rLen  = Math.sqrt(recv.x * recv.x + recv.y * recv.y + recv.z * recv.z);
+    const dot   = (dx * recv.x + dy * recv.y + dz * recv.z) / (rangM * rLen);
+    return { range: rangM / 1000, elev: Math.asin(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI };
+}
+
+const EARTH_R_M = 6378137;
+function elevMask() {
+    if (!receiver) return 0;
+    const h = Math.max(0, receiver.alt);
+    return -Math.acos(EARTH_R_M / (EARTH_R_M + h)) * 180 / Math.PI;
+}
+
+// ── Signal data ───────────────────────────────────────────────────────
+const GPS_SIGNAL_MAP = {
+    11:['L1CA'], 13:['L1CA'], 14:['L1CA'], 20:['L1CA'], 21:['L1CA'], 22:['L1CA'],
+    12:['L1CA','L2C'], 15:['L1CA','L2C'], 17:['L1CA','L2C'], 29:['L1CA','L2C'], 31:['L1CA','L2C'],
+    1:['L1CA','L2C','L5'], 3:['L1CA','L2C','L5'], 6:['L1CA','L2C','L5'], 8:['L1CA','L2C','L5'],
+    9:['L1CA','L2C','L5'], 10:['L1CA','L2C','L5'], 24:['L1CA','L2C','L5'], 25:['L1CA','L2C','L5'],
+    26:['L1CA','L2C','L5'], 27:['L1CA','L2C','L5'], 30:['L1CA','L2C','L5'], 32:['L1CA','L2C','L5'],
+    2:['L1CA','L1C','L2C','L5'], 4:['L1CA','L1C','L2C','L5'], 5:['L1CA','L1C','L2C','L5'],
+    7:['L1CA','L1C','L2C','L5'], 18:['L1CA','L1C','L2C','L5'], 23:['L1CA','L1C','L2C','L5'],
+    28:['L1CA','L1C','L2C','L5'],
+};
+const SIG_STYLE = {
+    L1CA:'color:#4e9eff;border-color:#4e9eff66', L1C:'color:#82c0ff;border-color:#82c0ff66',
+    L2C:'color:#2ec4a9;border-color:#2ec4a966',  L5:'color:#b87fff;border-color:#b87fff66',
+    L1OF:'color:#00ddff;border-color:#00ddff66', L2OF:'color:#0099bb;border-color:#0099bb66',
+    L3OC:'color:#00ffdd;border-color:#00ffdd66',
+    B1I:'color:#ffcc00;border-color:#ffcc0066',  B2I:'color:#ffaa00;border-color:#ffaa0066',
+    B3I:'color:#ff8800;border-color:#ff880066',  B1C:'color:#ffe066;border-color:#ffe06666',
+    B2a:'color:#ffdd44;border-color:#ffdd4466',
+    E1B:'color:#ff9500;border-color:#ff950066',  E5a:'color:#ffb84d;border-color:#ffb84d66',
+    E5b:'color:#ffcc80;border-color:#ffcc8066',  E6:'color:#ff7700;border-color:#ff770066',
+};
+
+function getSignals(sat) {
+    if (sat.constellation === 'GPS') return GPS_SIGNAL_MAP[sat.prn] || ['L1CA'];
+    if (sat.constellation === 'GLONASS') {
+        const n = (sat.name || '').toUpperCase();
+        return n.includes('-K') ? ['L1OF','L2OF','L3OC'] : ['L1OF','L2OF'];
+    }
+    if (sat.constellation === 'BEIDOU') {
+        const n = (sat.name || '').toUpperCase();
+        return (n.includes('BEIDOU-3') || n.includes('BDS-3')) ? ['B1C','B2a','B3I'] : ['B1I','B2I','B3I'];
+    }
+    if (sat.constellation === 'GALILEO') {
+        const n = (sat.name || '').toUpperCase();
+        return n.includes('IOV') ? ['E1B','E5a','E5b'] : ['E1B','E5a','E5b','E6'];
+    }
+    return [];
+}
+
+function sigBadges(signals) {
+    return '<div class="sigs">' + signals.map(s => {
+        const st = SIG_STYLE[s] || 'color:#aaa;border-color:#555';
+        return `<span class="sig-b" style="${st}">${s}</span>`;
+    }).join('') + '</div>';
+}
+
+// ── Constellation visibility ──────────────────────────────────────────
+const enabledConst = { GPS: true, GLONASS: true, BEIDOU: true, GALILEO: true };
+
+function toggleConst(c) {
+    enabledConst[c] = !enabledConst[c];
+    const ids = { GPS: 'tog-gps', GLONASS: 'tog-glo', BEIDOU: 'tog-bei', GALILEO: 'tog-gal' };
+    document.getElementById(ids[c]).classList.toggle('active', enabledConst[c]);
+    for (const [key, entry] of Object.entries(satEntities)) {
+        if (satData[key] && satData[key].constellation === c) {
+            entry.point.show = enabledConst[c];
+            entry.trail.show = enabledConst[c];
+        }
+    }
+    for (const [key, link] of Object.entries(linkEntities)) {
+        if (satData[key] && satData[key].constellation === c) link.show = enabledConst[c];
+    }
+    updatePanel(lastSatellites);
+}
+
+// ── Satellite entities ────────────────────────────────────────────────
+const TRAIL_MAX = 80;
+const satEntities  = {};  // label → { point, trail, trailPos[] }
+const satData      = {};  // label → sat object
+const linkEntities = {};  // label → polyline entity
+let receiver = null, recvEntity = null, lastSatellites = [];
+
+function cesiumColor(hex, alpha) {
+    return Cesium.Color.fromCssColorString(hex).withAlpha(alpha !== undefined ? alpha : 1.0);
+}
+
+function updateSatellites(satellites) {
+    lastSatellites = satellites;
+    const seen = new Set();
+
+    for (const sat of satellites) {
+        seen.add(sat.label);
+        satData[sat.label] = sat;
+
+        const pos   = new Cesium.Cartesian3(sat.x, sat.y, sat.z);
+        const color = cesiumColor(satColor(sat.constellation, sat.healthy));
+        const show  = enabledConst[sat.constellation];
+
+        if (!satEntities[sat.label]) {
+            const point = viewer.entities.add({
+                id:       sat.label,
+                show:     show,
+                position: new Cesium.ConstantPositionProperty(pos),
+                point: {
+                    pixelSize: 9,
+                    color:        color,
+                    outlineColor: Cesium.Color.BLACK.withAlpha(0.6),
+                    outlineWidth: 1,
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                },
+                label: {
+                    text:        sat.label,
+                    font:        'bold 13px monospace',
+                    fillColor:   color,
+                    outlineColor: Cesium.Color.BLACK,
+                    outlineWidth: 2,
+                    style:       Cesium.LabelStyle.FILL_AND_OUTLINE,
+                    pixelOffset: new Cesium.Cartesian2(13, 0),
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                    scale: 1.0,
+                },
+            });
+            const trail = viewer.entities.add({
+                show: show,
+                polyline: {
+                    positions:   new Cesium.ConstantProperty([pos]),
+                    width:       1.5,
+                    material:    new Cesium.ColorMaterialProperty(color.withAlpha(0.4)),
+                    arcType:     Cesium.ArcType.NONE,
+                    clampToGround: false,
+                },
+            });
+            satEntities[sat.label] = { point, trail, trailPos: [pos] };
+        } else {
+            const e = satEntities[sat.label];
+            e.point.show = show;
+            e.trail.show = show;
+            e.point.position = new Cesium.ConstantPositionProperty(pos);
+            e.point.point.color    = new Cesium.ConstantProperty(color);
+            e.point.label.fillColor = new Cesium.ConstantProperty(color);
+            e.trailPos.push(pos);
+            if (e.trailPos.length > TRAIL_MAX) e.trailPos.shift();
+            e.trail.polyline.positions = new Cesium.ConstantProperty([...e.trailPos]);
+        }
+    }
+
+    for (const key of Object.keys(satEntities)) {
+        if (!seen.has(key)) {
+            viewer.entities.remove(satEntities[key].point);
+            viewer.entities.remove(satEntities[key].trail);
+            delete satEntities[key];
+            delete satData[key];
+        }
+    }
+
+    refreshLinks(satellites);
+    updatePanel(satellites);
+}
+
+// ── Receiver & links ──────────────────────────────────────────────────
+function refreshLinks(satellites) {
+    for (const key of Object.keys(linkEntities)) {
+        viewer.entities.remove(linkEntities[key]);
+        delete linkEntities[key];
+    }
+    if (!receiver) return;
+
+    const mask = elevMask();
+    const rPos = new Cesium.Cartesian3(receiver.ecef.x, receiver.ecef.y, receiver.ecef.z);
+
+    for (const sat of satellites) {
+        if (!enabledConst[sat.constellation]) continue;
+        const { elev } = rangeElev(receiver.ecef, sat.x, sat.y, sat.z);
+        if (elev < mask) continue;
+        const sPos    = new Cesium.Cartesian3(sat.x, sat.y, sat.z);
+        const elevHex = elev > 45 ? '#00ff88' : elev > 20 ? '#ffdd00' : '#ff8800';
+        linkEntities[sat.label] = viewer.entities.add({
+            polyline: {
+                positions:   new Cesium.ConstantProperty([rPos, sPos]),
+                width:       1.5,
+                material:    new Cesium.ColorMaterialProperty(cesiumColor(elevHex, 0.65)),
+                arcType:     Cesium.ArcType.NONE,
+                clampToGround: false,
+            },
+        });
+    }
+}
+
+function placeRecvMarker(ecef) {
+    if (recvEntity) viewer.entities.remove(recvEntity);
+    recvEntity = viewer.entities.add({
+        position: new Cesium.ConstantPositionProperty(new Cesium.Cartesian3(ecef.x, ecef.y, ecef.z)),
+        point: {
+            pixelSize: 14,
+            color:        cesiumColor('#ffaa00'),
+            outlineColor: Cesium.Color.WHITE,
+            outlineWidth: 2,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+            text:        'RX',
+            font:        'bold 11px monospace',
+            fillColor:   cesiumColor('#ffaa00'),
+            outlineColor: Cesium.Color.BLACK,
+            outlineWidth: 2,
+            style:       Cesium.LabelStyle.FILL_AND_OUTLINE,
+            pixelOffset: new Cesium.Cartesian2(0, -20),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+    });
+}
+
+function setReceiver() {
+    const lat = parseFloat(document.getElementById('inp-lat').value);
+    const lon = parseFloat(document.getElementById('inp-lon').value);
+    const alt = parseFloat(document.getElementById('inp-alt').value) || 0;
+    if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+        document.getElementById('recv-status').textContent = '⚠ Invalid coordinates'; return;
+    }
+    const ecef = llhToEcef(lat, lon, alt);
+    receiver = { ecef, lat, lon, alt };
+    placeRecvMarker(ecef);
+    viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(lon, lat, 50000000), duration: 1.5 });
+    document.getElementById('recv-status').textContent = lat.toFixed(4) + '°, ' + lon.toFixed(4) + '°';
+    if (lastSatellites.length) { refreshLinks(lastSatellites); updatePanel(lastSatellites); }
+}
+
+function geoLocate() {
+    if (!navigator.geolocation) { document.getElementById('recv-status').textContent = '⚠ Geolocation unavailable'; return; }
+    document.getElementById('recv-status').textContent = '⏳ Locating…';
+    navigator.geolocation.getCurrentPosition(pos => {
+        const { latitude: lat, longitude: lon, altitude: alt } = pos.coords;
+        document.getElementById('inp-lat').value = lat.toFixed(6);
+        document.getElementById('inp-lon').value = lon.toFixed(6);
+        document.getElementById('inp-alt').value = Math.round(alt || 0);
+        setReceiver();
+    }, () => { document.getElementById('recv-status').textContent = '⚠ Location denied'; });
+}
+
+function clearReceiver() {
+    receiver = null;
+    if (recvEntity) { viewer.entities.remove(recvEntity); recvEntity = null; }
+    for (const key of Object.keys(linkEntities)) { viewer.entities.remove(linkEntities[key]); delete linkEntities[key]; }
+    document.getElementById('recv-status').textContent = '';
+    updatePanel(lastSatellites);
+}
+
+// ── Panel ─────────────────────────────────────────────────────────────
+function updatePanel(satsArr) {
+    const sub  = document.getElementById('panel-sub');
+    const hdr  = document.getElementById('col-header');
+    const lst  = document.getElementById('sat-list');
+    const vis0 = satsArr.filter(s => enabledConst[s.constellation]);
+
+    function dotCls(s) {
+        return s.constellation === 'GLONASS' ? 'dot-glo'
+             : s.constellation === 'BEIDOU'  ? 'dot-bei'
+             : s.constellation === 'GALILEO' ? 'dot-gal'
+             : (s.healthy ? 'dot-ok' : 'dot-fail');
+    }
+
+    if (!receiver) {
+        sub.textContent = 'All satellites (' + vis0.length + ')';
+        hdr.className   = 'no-recv';
+        hdr.innerHTML   = '<span></span><span>ID</span><span>Lat / Lon</span>';
+        lst.innerHTML   = [...vis0].sort((a, b) => {
+            if (a.constellation !== b.constellation) return a.constellation < b.constellation ? -1 : 1;
+            return a.prn - b.prn;
+        }).map(s => `<div class="sat-row no-recv" onclick="flyToSat('${s.label}')">
+            <div><div class="dot ${dotCls(s)}"></div></div>
+            <div class="prn" style="color:${satColor(s.constellation,s.healthy)}">${s.label}</div>
+            <div class="cell">${s.lat}°<br>${s.lon}°</div>
+            ${sigBadges(getSignals(s))}
+        </div>`).join('');
+    } else {
+        const mask = elevMask();
+        const vis  = vis0
+            .map(s => ({ ...s, ...rangeElev(receiver.ecef, s.x, s.y, s.z) }))
+            .filter(s => s.elev >= mask)
+            .sort((a, b) => b.elev - a.elev);
+
+        const sigCount = {}, constCount = { GPS: 0, GLONASS: 0, BEIDOU: 0, GALILEO: 0 };
+        let totalSigs = 0;
+        for (const s of vis) {
+            constCount[s.constellation]++;
+            for (const sig of getSignals(s)) { sigCount[sig] = (sigCount[sig] || 0) + 1; totalSigs++; }
+        }
+        const sigSummary = Object.entries(sigCount).sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([sig, n]) => `<span class="sig-b" style="${SIG_STYLE[sig] || 'color:#aaa;border-color:#555'}">${sig} ×${n}</span>`).join('');
+        const constSummary = ['GPS','GLONASS','BEIDOU','GALILEO'].filter(c => constCount[c] > 0)
+            .map(c => `<span style="color:${satColor(c,true)}">${c}: ${constCount[c]}</span>`).join(' • ');
+
+        sub.innerHTML = 'In view: ' + vis.length + ' satellite' + (vis.length !== 1 ? 's' : '') + ' (' + constSummary + ')' +
+            (sigSummary ? '<div class="sig-sum">Signals: ' + totalSigs + ' • ' + sigSummary + '</div>' : '');
+        hdr.className   = 'recv';
+        hdr.innerHTML   = '<span></span><span>ID</span><span>Range</span><span>Elev</span>';
+        lst.innerHTML   = vis.map(s => {
+            const ec = s.elev > 45 ? '#00ff88' : s.elev > 20 ? '#ffdd00' : '#ff8800';
+            return `<div class="sat-row recv" onclick="flyToSat('${s.label}')">
+                <div><div class="dot ${dotCls(s)}"></div></div>
+                <div class="prn" style="color:${satColor(s.constellation,s.healthy)}">${s.label}</div>
+                <div class="cell">${Math.round(s.range).toLocaleString()} km</div>
+                <div class="cell" style="color:${ec}">${s.elev.toFixed(1)}°</div>
+                ${sigBadges(getSignals(s))}
+            </div>`;
+        }).join('');
+    }
+}
+
+// ── Click satellite row → fly to it ──────────────────────────────────
+function flyToSat(label) {
+    const d = satData[label];
+    if (!d) return;
+    // Fly to a position slightly outside the satellite's orbit for a good view
+    const scale = 1.25;
+    viewer.camera.flyTo({
+        destination: new Cesium.Cartesian3(d.x * scale, d.y * scale, d.z * scale),
+        duration: 1.5,
+    });
+}
+
+// ── Hover tooltip ─────────────────────────────────────────────────────
+const tooltip = document.getElementById('tooltip');
+const evtHandler = new Cesium.ScreenSpaceEventHandler(viewer.canvas);
+
+evtHandler.setInputAction(function(movement) {
+    const picked = viewer.scene.pick(movement.endPosition);
+    if (Cesium.defined(picked) && typeof picked.id === 'string' && satData[picked.id]) {
+        const d = satData[picked.id];
+        let extra = '';
+        if (receiver) {
+            const { range, elev } = rangeElev(receiver.ecef, d.x, d.y, d.z);
+            extra = elev >= elevMask()
+                ? `<div><span class="t-lbl">Range: </span><span class="t-val">${Math.round(range).toLocaleString()} km</span></div>
+                   <div><span class="t-lbl">Elev:  </span><span class="t-val">${elev.toFixed(1)}°</span></div>`
+                : `<div style="color:#ff8800">Below horizon</div>`;
+        }
+        tooltip.style.display = 'block';
+        tooltip.style.left    = (movement.endPosition.x + 14) + 'px';
+        tooltip.style.top     = (movement.endPosition.y - 10) + 'px';
+        tooltip.innerHTML = `<div class="t-prn" style="color:${satColor(d.constellation,d.healthy)}">${picked.id}</div>
+            <div><span class="t-lbl">Type:   </span><span class="t-val">${d.constellation}</span></div>
+            <div><span class="t-lbl">Health: </span><span class="t-val">${d.healthy ? '✓ Healthy' : '✗ Unhealthy'}</span></div>
+            <div><span class="t-lbl">Lat:    </span><span class="t-val">${d.lat}°</span></div>
+            <div><span class="t-lbl">Lon:    </span><span class="t-val">${d.lon}°</span></div>
+            <div><span class="t-lbl">Alt:    </span><span class="t-val">${d.alt_km} km</span></div>${extra}`;
+    } else {
+        tooltip.style.display = 'none';
+    }
+}, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+// ── Data fetch ────────────────────────────────────────────────────────
+async function fetchLive() {
+    try {
+        const res  = await fetch('/api/live-positions');
+        const data = await res.json();
+        document.getElementById('loading').style.display = 'none';
+        if (!res.ok) { console.error('API error:', data.error); return; }
+
+        document.getElementById('st-time').textContent    = data.time;
+        document.getElementById('st-almanac').textContent = data.almanac_date || '—';
+        document.getElementById('st-gps').textContent     = data.satellites.filter(s => s.constellation === 'GPS').length;
+        document.getElementById('st-glo').textContent     = data.satellites.filter(s => s.constellation === 'GLONASS').length;
+        document.getElementById('st-bei').textContent     = data.satellites.filter(s => s.constellation === 'BEIDOU').length;
+        document.getElementById('st-gal').textContent     = data.satellites.filter(s => s.constellation === 'GALILEO').length;
+
+        updateSatellites(data.satellites);
+    } catch (e) {
+        console.error('fetchLive error:', e);
+        document.getElementById('loading').style.display = 'none';
+    }
+}
+
+fetchLive();
+setInterval(fetchLive, 5000);
+</script>
+</body>
+</html>
