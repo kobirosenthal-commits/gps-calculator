@@ -35,6 +35,7 @@ def _tle_refresh_worker():
     """Background thread that refreshes TLE constellations without blocking requests."""
     global glo_data, bei_data, gal_data
     while True:
+        all_ok = True
         for group, prefix, target in (
             ('glo-ops',  'R', 'glo'),
             ('beidou',   'C', 'bei'),
@@ -50,12 +51,28 @@ def _tle_refresh_worker():
                         bei_data = entry
                     else:
                         gal_data = entry
-            except Exception:
-                pass
-        time.sleep(6 * 3600)  # refresh every 6 hours
+                    app.logger.info(f"TLE refresh: loaded {len(tles)} {target} satellites")
+                else:
+                    all_ok = False
+                    app.logger.warning(f"TLE refresh: failed to load {target}")
+            except Exception as e:
+                all_ok = False
+                app.logger.warning(f"TLE refresh: exception loading {target}: {e}")
+        # If everything loaded, refresh every 6h; otherwise retry in 2 minutes
+        time.sleep(6 * 3600 if all_ok else 120)
 
 
 threading.Thread(target=_tle_refresh_worker, daemon=True).start()
+
+
+@app.errorhandler(500)
+def _api_500(err):
+    """Return JSON for API 500s so the frontend never sees an HTML error page."""
+    if request.path.startswith('/api/'):
+        app.logger.exception(f"Unhandled error in {request.path}")
+        original = getattr(err, 'original_exception', err)
+        return jsonify({'error': f'{type(original).__name__}: {original}'}), 500
+    return err
 
 
 @app.route('/')
@@ -228,14 +245,20 @@ def satellite_detail():
 def live_positions():
     global almanac_data, glo_data, bei_data, gal_data
 
-    # Auto-load GPS almanac
+    # Auto-load GPS almanac (never let a network glitch 500 the endpoint)
     if not almanac_data['satellites']:
         dt = datetime.now(timezone.utc) - timedelta(days=2)
         for offset in range(5):
             candidate = dt - timedelta(days=offset)
-            text = fetch_almanac(candidate.year, candidate.timetuple().tm_yday)
+            try:
+                text = fetch_almanac(candidate.year, candidate.timetuple().tm_yday)
+            except Exception:
+                text = None
             if text:
-                satellites = parse_yuma(text)
+                try:
+                    satellites = parse_yuma(text)
+                except Exception:
+                    satellites = None
                 if satellites:
                     almanac_data = {
                         'satellites': satellites,

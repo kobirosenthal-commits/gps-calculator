@@ -134,7 +134,7 @@ def fetch_tle_group(group):
     for url in urls:
         for verify in (True, False):
             try:
-                r = requests.get(url, timeout=2, headers=headers, verify=verify)
+                r = requests.get(url, timeout=15, headers=headers, verify=verify)
                 r.raise_for_status()
                 text = r.text
                 if text and '1 ' in text and not text.lstrip().lower().startswith('no gp'):
