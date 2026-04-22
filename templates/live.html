@@ -86,6 +86,7 @@
         .dot-ok   { background: #00ff88; }
         .dot-glo  { background: #00ddff; }
         .dot-bei  { background: #ffcc00; }
+        .dot-gal  { background: #ff9500; }
         .dot-fail { background: #ff4444; }
         /* Signal badges */
         .sigs { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 2px; grid-column: 2 / -1; }
@@ -104,6 +105,8 @@
         .tog-glo.active { background: rgba(0,221,255,0.18); }
         .tog-bei { color: #ffcc00; border-color: #ffcc00; background: rgba(255,204,0,0.08); }
         .tog-bei.active { background: rgba(255,204,0,0.18); }
+        .tog-gal { color: #ff9500; border-color: #ff9500; background: rgba(255,149,0,0.08); }
+        .tog-gal.active { background: rgba(255,149,0,0.18); }
 
         #tooltip {
             position: absolute; background: rgba(0,5,20,0.93); border: 1px solid #3a6aaa;
@@ -134,6 +137,7 @@
         <button id="tog-gps" class="tog-btn tog-gps active" onclick="toggleConst('GPS')">GPS</button>
         <button id="tog-glo" class="tog-btn tog-glo active" onclick="toggleConst('GLONASS')">GLO</button>
         <button id="tog-bei" class="tog-btn tog-bei active" onclick="toggleConst('BEIDOU')">BDS</button>
+        <button id="tog-gal" class="tog-btn tog-gal active" onclick="toggleConst('GALILEO')">GAL</button>
     </div>
     <a href="/calculator">⚙ Calculator</a>
 </div>
@@ -144,6 +148,7 @@
     <div><span class="lbl">GPS      </span><span class="val" id="st-gps">—</span></div>
     <div><span class="lbl">GLONASS  </span><span class="val" id="st-glo">—</span></div>
     <div><span class="lbl">BEIDOU   </span><span class="val" id="st-bei">—</span></div>
+    <div><span class="lbl">GALILEO  </span><span class="val" id="st-gal">—</span></div>
     <div><span class="lbl">UPDATE   </span><span class="val">every 5s</span></div>
 </div>
 
@@ -271,12 +276,14 @@ const LINK_BASE = [7.0, 2.3];
 function satColor(constellation, healthy) {
     if (constellation === 'GLONASS') return '#00ddff';
     if (constellation === 'BEIDOU')  return '#ffcc00';
+    if (constellation === 'GALILEO') return '#ff9500';
     return healthy ? '#00ff88' : '#ff5555';
 }
 
 function satMat(constellation, healthy) {
     if (constellation === 'GLONASS') return MAT_GLO;
     if (constellation === 'BEIDOU')  return MAT_BEI;
+    if (constellation === 'GALILEO') return MAT_GAL;
     return healthy ? MAT_OK : MAT_FAIL;
 }
 
@@ -332,6 +339,8 @@ const SIG_STYLE = {
     B1I:'color:#ffcc00;border-color:#ffcc0066',  B2I:'color:#ffaa00;border-color:#ffaa0066',
     B3I:'color:#ff8800;border-color:#ff880066',  B1C:'color:#ffe066;border-color:#ffe06666',
     B2a:'color:#ffdd44;border-color:#ffdd4466',
+    E1B:'color:#ff9500;border-color:#ff950066',  E5a:'color:#ffb84d;border-color:#ffb84d66',
+    E5b:'color:#ffcc80;border-color:#ffcc8066',  E6: 'color:#ff7700;border-color:#ff770066',
 };
 function getSignals(sat) {
     if (sat.constellation === 'GPS') return GPS_SIGNAL_MAP[sat.prn] || ['L1CA'];
@@ -343,6 +352,10 @@ function getSignals(sat) {
         const n = (sat.name || '').toUpperCase();
         return (n.includes('BEIDOU-3') || n.includes('BDS-3')) ? ['B1C','B2a','B3I'] : ['B1I','B2I','B3I'];
     }
+    if (sat.constellation === 'GALILEO') {
+        const n = (sat.name || '').toUpperCase();
+        return n.includes('IOV') ? ['E1B','E5a','E5b'] : ['E1B','E5a','E5b','E6'];
+    }
     return [];
 }
 function sigBadges(signals) {
@@ -353,10 +366,10 @@ function sigBadges(signals) {
 }
 
 // ── Constellation visibility ──────────────────────────────────────────
-const enabledConst = { GPS: true, GLONASS: true, BEIDOU: true };
+const enabledConst = { GPS: true, GLONASS: true, BEIDOU: true, GALILEO: true };
 function toggleConst(c) {
     enabledConst[c] = !enabledConst[c];
-    const id = c === 'GPS' ? 'tog-gps' : c === 'GLONASS' ? 'tog-glo' : 'tog-bei';
+    const id = c === 'GPS' ? 'tog-gps' : c === 'GLONASS' ? 'tog-glo' : c === 'BEIDOU' ? 'tog-bei' : 'tog-gal';
     document.getElementById(id).classList.toggle('active', enabledConst[c]);
     for (const [key, obj] of Object.entries(sats)) {
         const d = satData[key];
@@ -381,6 +394,7 @@ const MAT_OK   = new THREE.MeshPhongMaterial({ color: 0x00ff88, emissive: 0x0066
 const MAT_FAIL = new THREE.MeshPhongMaterial({ color: 0xff4444, emissive: 0x661111 });
 const MAT_GLO  = new THREE.MeshPhongMaterial({ color: 0x00ddff, emissive: 0x005566 });
 const MAT_BEI  = new THREE.MeshPhongMaterial({ color: 0xffcc00, emissive: 0x664400 });
+const MAT_GAL  = new THREE.MeshPhongMaterial({ color: 0xff9500, emissive: 0x663300 });
 const TRAIL_MAX = 80;
 const sats = {}, satData = {};
 
@@ -391,6 +405,7 @@ function makeTrail(healthy, constellation) {
     geo.setDrawRange(0, 0);
     const color = constellation === 'GLONASS' ? 0x0099cc
                 : constellation === 'BEIDOU'  ? 0xcc9900
+                : constellation === 'GALILEO' ? 0xcc6600
                 : (healthy ? 0x00cc66 : 0xcc3333);
     const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.45 }));
     return { line, pts: [] };
@@ -427,6 +442,7 @@ function refreshLinks(satellites) {
     const mask = elevMask();
     const rPos = e2t(receiver.ecef.x, receiver.ecef.y, receiver.ecef.z);
     for (const sat of satellites) {
+        if (!enabledConst[sat.constellation]) continue;
         const { range, elev } = rangeElev(receiver.ecef, sat.x, sat.y, sat.z);
         if (elev < mask) continue;
         const sPos = e2t(sat.x, sat.y, sat.z);
@@ -512,7 +528,7 @@ function updatePanel(satsArr) {
             if (a.constellation !== b.constellation) return a.constellation < b.constellation ? -1 : 1;
             return a.prn - b.prn;
         }).map(s => {
-            const dotCls   = s.constellation === 'GLONASS' ? 'dot-glo' : s.constellation === 'BEIDOU' ? 'dot-bei' : (s.healthy ? 'dot-ok' : 'dot-fail');
+            const dotCls   = s.constellation === 'GLONASS' ? 'dot-glo' : s.constellation === 'BEIDOU' ? 'dot-bei' : s.constellation === 'GALILEO' ? 'dot-gal' : (s.healthy ? 'dot-ok' : 'dot-fail');
             const prnColor = satColor(s.constellation, s.healthy);
             return `<div class="sat-row no-recv" onmouseenter="hlSat('${s.label}')" onmouseleave="clearHl()">
                 <div><div class="dot ${dotCls}"></div></div>
@@ -527,7 +543,7 @@ function updatePanel(satsArr) {
             .map(s => ({ ...s, ...rangeElev(receiver.ecef, s.x, s.y, s.z) }))
             .filter(s => s.elev >= mask)
             .sort((a, b) => b.elev - a.elev);
-        const sigCount = {}, constCount = { GPS: 0, GLONASS: 0, BEIDOU: 0 };
+        const sigCount = {}, constCount = { GPS: 0, GLONASS: 0, BEIDOU: 0, GALILEO: 0 };
         let totalSigs = 0;
         for (const s of vis) {
             constCount[s.constellation]++;
@@ -538,15 +554,15 @@ function updatePanel(satsArr) {
         }
         const sigSummary = Object.entries(sigCount).sort((a,b) => a[0].localeCompare(b[0]))
             .map(([sig, n]) => { const st = SIG_STYLE[sig] || 'color:#aaa;border-color:#555'; return `<span class="sig-b" style="${st}">${sig} ×${n}</span>`; }).join('');
-        const constSummary = ['GPS', 'GLONASS', 'BEIDOU'].filter(c => constCount[c] > 0)
-            .map(c => `<span style="color:${c === 'GLONASS' ? '#00ddff' : c === 'BEIDOU' ? '#ffcc00' : '#00ff88'}">${c}: ${constCount[c]}</span>`).join(' • ');
+        const constSummary = ['GPS', 'GLONASS', 'BEIDOU', 'GALILEO'].filter(c => constCount[c] > 0)
+            .map(c => `<span style="color:${satColor(c, true)}">${c}: ${constCount[c]}</span>`).join(' • ');
         sub.innerHTML = 'In view: ' + vis.length + ' satellite' + (vis.length !== 1 ? 's' : '') + ' (' + constSummary + ')' +
             (sigSummary ? '<div class="sig-sum">Signals: ' + totalSigs + ' • ' + sigSummary + '</div>' : '');
         hdr.className   = 'recv';
         hdr.innerHTML   = '<span></span><span>ID</span><span>Range</span><span>Elev</span>';
         lst.innerHTML   = vis.map(s => {
             const c = s.elev > 45 ? '#00ff88' : s.elev > 20 ? '#ffdd00' : '#ff8800';
-            const dotCls   = s.constellation === 'GLONASS' ? 'dot-glo' : s.constellation === 'BEIDOU' ? 'dot-bei' : (s.healthy ? 'dot-ok' : 'dot-fail');
+            const dotCls   = s.constellation === 'GLONASS' ? 'dot-glo' : s.constellation === 'BEIDOU' ? 'dot-bei' : s.constellation === 'GALILEO' ? 'dot-gal' : (s.healthy ? 'dot-ok' : 'dot-fail');
             const prnColor = satColor(s.constellation, s.healthy);
             return `<div class="sat-row recv" onmouseenter="hlSat('${s.label}')" onmouseleave="clearHl()">
                 <div><div class="dot ${dotCls}"></div></div>
@@ -661,11 +677,13 @@ async function fetchLive() {
         const gpsSats = data.satellites.filter(s => s.constellation === 'GPS');
         const gloSats = data.satellites.filter(s => s.constellation === 'GLONASS');
         const beiSats = data.satellites.filter(s => s.constellation === 'BEIDOU');
+        const galSats = data.satellites.filter(s => s.constellation === 'GALILEO');
         document.getElementById('st-time').textContent    = data.time;
         document.getElementById('st-almanac').textContent = data.almanac_date || '—';
         document.getElementById('st-gps').textContent     = gpsSats.length;
         document.getElementById('st-glo').textContent     = gloSats.length;
         document.getElementById('st-bei').textContent     = beiSats.length;
+        document.getElementById('st-gal').textContent     = galSats.length;
         updateSatellites(data.satellites);
     } catch (e) {
         console.error('fetchLive error:', e);

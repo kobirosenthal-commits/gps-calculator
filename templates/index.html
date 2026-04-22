@@ -285,7 +285,7 @@
 <body>
     <div class="container">
         <header>
-            <h1>🛰️ GPS / GLONASS Calculator</h1>
+            <h1>🛰️ GPS / GLONASS / BeiDou / Galileo Calculator</h1>
             <p class="subtitle">YUMA Almanac &amp; TLE Position Calculator</p>
             <a href="/" style="display:inline-block;margin-top:14px;color:white;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.4);padding:8px 22px;border-radius:20px;text-decoration:none;font-size:0.95em;letter-spacing:1px;transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.25)'" onmouseout="this.style.background='rgba(255,255,255,0.15)'">🌍 Live Sky View</a>
         </header>
@@ -301,6 +301,7 @@
                     <button id="tab-gps" class="tab-btn tab-active" onclick="selectConstellation('GPS')">GPS</button>
                     <button id="tab-glo" class="tab-btn" onclick="selectConstellation('GLONASS')">GLONASS</button>
                     <button id="tab-bei" class="tab-btn" onclick="selectConstellation('BEIDOU')">BeiDou</button>
+                    <button id="tab-gal" class="tab-btn" onclick="selectConstellation('GALILEO')">Galileo</button>
                 </div>
 
                 <div class="form-group" id="date-group">
@@ -374,15 +375,15 @@
     <script>
         let currentConstellation = 'GPS';
 
-        const CONST_LABELS = { GPS: 'Load GPS Almanac', GLONASS: 'Load GLONASS TLEs', BEIDOU: 'Load BeiDou TLEs' };
-        const CONST_PRN   = { GPS: 'PRN Number (1–32)', GLONASS: 'Satellite # (1–30)', BEIDOU: 'Satellite # (1–60)' };
-        const CONST_MAX   = { GPS: 32, GLONASS: 30, BEIDOU: 60 };
+        const CONST_LABELS = { GPS: 'Load GPS Almanac', GLONASS: 'Load GLONASS TLEs', BEIDOU: 'Load BeiDou TLEs', GALILEO: 'Load Galileo TLEs' };
+        const CONST_PRN   = { GPS: 'PRN Number (1–32)', GLONASS: 'Satellite # (1–30)', BEIDOU: 'Satellite # (1–60)', GALILEO: 'Satellite # (1–36)' };
+        const CONST_MAX   = { GPS: 32, GLONASS: 30, BEIDOU: 60, GALILEO: 36 };
+        const CONST_TAB   = { GPS: 'tab-gps', GLONASS: 'tab-glo', BEIDOU: 'tab-bei', GALILEO: 'tab-gal' };
 
         function selectConstellation(c) {
             currentConstellation = c;
-            ['GPS','GLONASS','BEIDOU'].forEach(x => {
-                document.getElementById('tab-' + x.toLowerCase().replace('beidou','bei')).className =
-                    'tab-btn' + (c === x ? ' tab-active' : '');
+            Object.keys(CONST_TAB).forEach(x => {
+                document.getElementById(CONST_TAB[x]).className = 'tab-btn' + (c === x ? ' tab-active' : '');
             });
             document.getElementById('date-group').style.display = c === 'GPS' ? '' : 'none';
             document.getElementById('glo-note').style.display   = c !== 'GPS' ? '' : 'none';
@@ -547,8 +548,9 @@
         }
 
         function displayResults(data) {
-            const labelStyle = data.constellation === 'GLONASS'
-                ? 'color:#0099cc;font-weight:700'
+            const labelStyle = data.constellation === 'GLONASS' ? 'color:#0099cc;font-weight:700'
+                : data.constellation === 'BEIDOU'  ? 'color:#cc9900;font-weight:700'
+                : data.constellation === 'GALILEO' ? 'color:#ff9500;font-weight:700'
                 : 'color:#5a2d8a;font-weight:700';
             const html = `
                 <div class="result-row">

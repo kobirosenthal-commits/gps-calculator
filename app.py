@@ -11,6 +11,7 @@ app = Flask(__name__)
 almanac_data = {'satellites': [], 'date': None, 'week': None, 'toa': None}
 glo_data = {'tles': [], 'fetched': None}
 bei_data = {'tles': [], 'fetched': None}
+gal_data = {'tles': [], 'fetched': None}
 
 
 def _load_tle_constellation(group, label_prefix):
@@ -31,21 +32,24 @@ def _load_tle_constellation(group, label_prefix):
 
 
 def _tle_refresh_worker():
-    """Background thread that refreshes GLONASS/BeiDou TLEs without blocking requests."""
-    global glo_data, bei_data
+    """Background thread that refreshes TLE constellations without blocking requests."""
+    global glo_data, bei_data, gal_data
     while True:
-        for constellation, group, prefix, cache_name in (
-            ('GLONASS', 'glo-ops', 'R', 'glo'),
-            ('BEIDOU',  'beidou',  'C', 'bei'),
+        for group, prefix, target in (
+            ('glo-ops',  'R', 'glo'),
+            ('beidou',   'C', 'bei'),
+            ('galileo',  'E', 'gal'),
         ):
             try:
                 tles = _load_tle_constellation(group, prefix)
                 if tles:
-                    fetched = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-                    if cache_name == 'glo':
-                        glo_data = {'tles': tles, 'fetched': fetched}
+                    entry = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
+                    if target == 'glo':
+                        glo_data = entry
+                    elif target == 'bei':
+                        bei_data = entry
                     else:
-                        bei_data = {'tles': tles, 'fetched': fetched}
+                        gal_data = entry
             except Exception:
                 pass
         time.sleep(6 * 3600)  # refresh every 6 hours
@@ -66,7 +70,7 @@ def calculator():
 
 @app.route('/api/load-almanac', methods=['POST'])
 def load_almanac():
-    global almanac_data, glo_data, bei_data
+    global almanac_data, glo_data, bei_data, gal_data
 
     payload = request.json
     if payload is None:
@@ -74,17 +78,19 @@ def load_almanac():
 
     constellation = payload.get('constellation', 'GPS').upper()
 
-    if constellation in ('GLONASS', 'BEIDOU'):
-        group  = 'glo-ops' if constellation == 'GLONASS' else 'beidou'
-        prefix = 'R'       if constellation == 'GLONASS' else 'C'
+    if constellation in ('GLONASS', 'BEIDOU', 'GALILEO'):
+        group  = {'GLONASS': 'glo-ops', 'BEIDOU': 'beidou', 'GALILEO': 'galileo'}[constellation]
+        prefix = {'GLONASS': 'R',       'BEIDOU': 'C',      'GALILEO': 'E'}[constellation]
         tles = _load_tle_constellation(group, prefix)
         if not tles:
             return jsonify({'error': f'Could not fetch {constellation} TLEs from Celestrak'}), 503
         fetched = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         if constellation == 'GLONASS':
             glo_data = {'tles': tles, 'fetched': fetched}
-        else:
+        elif constellation == 'BEIDOU':
             bei_data = {'tles': tles, 'fetched': fetched}
+        else:
+            gal_data = {'tles': tles, 'fetched': fetched}
         return jsonify({
             'success': True,
             'count': len(tles),
@@ -146,6 +152,12 @@ def get_satellites():
         result = [{'id': t['id'], 'label': t['label'], 'name': t['name'], 'health': 'Healthy'} for t in bei_data['tles']]
         return jsonify({'satellites': result, 'date': bei_data['fetched'], 'constellation': 'BEIDOU'})
 
+    if constellation == 'GALILEO':
+        if not gal_data['tles']:
+            return jsonify({'error': 'No Galileo TLEs loaded'}), 400
+        result = [{'id': t['id'], 'label': t['label'], 'name': t['name'], 'health': 'Healthy'} for t in gal_data['tles']]
+        return jsonify({'satellites': result, 'date': gal_data['fetched'], 'constellation': 'GALILEO'})
+
     if not almanac_data['satellites']:
         return jsonify({'error': 'No almanac loaded'}), 400
 
@@ -170,7 +182,7 @@ def live():
 
 @app.route('/api/live-positions', methods=['GET'])
 def live_positions():
-    global almanac_data, glo_data, bei_data
+    global almanac_data, glo_data, bei_data, gal_data
 
     # Auto-load GPS almanac
     if not almanac_data['satellites']:
@@ -191,7 +203,7 @@ def live_positions():
 
     # GLONASS/BeiDou TLEs are loaded by a background thread — never blocks this request
 
-    if not almanac_data['satellites'] and not glo_data['tles'] and not bei_data['tles']:
+    if not almanac_data['satellites'] and not glo_data['tles'] and not bei_data['tles'] and not gal_data['tles']:
         return jsonify({'error': 'Could not load satellite data'}), 503
 
     now = datetime.now(timezone.utc)
@@ -211,7 +223,7 @@ def live_positions():
         except (TypeError, ValueError, ZeroDivisionError):
             pass
 
-    for constellation, cache in (('GLONASS', glo_data), ('BEIDOU', bei_data)):
+    for constellation, cache in (('GLONASS', glo_data), ('BEIDOU', bei_data), ('GALILEO', gal_data)):
         for tle in cache['tles']:
             try:
                 pos = propagate_tle(tle, now)
@@ -243,8 +255,8 @@ def calculate_position():
 
     constellation = payload.get('constellation', 'GPS').upper()
 
-    if constellation in ('GLONASS', 'BEIDOU'):
-        cache = glo_data if constellation == 'GLONASS' else bei_data
+    if constellation in ('GLONASS', 'BEIDOU', 'GALILEO'):
+        cache = {'GLONASS': glo_data, 'BEIDOU': bei_data, 'GALILEO': gal_data}[constellation]
         if not cache['tles']:
             return jsonify({'error': f'No {constellation} TLEs loaded'}), 400
 
