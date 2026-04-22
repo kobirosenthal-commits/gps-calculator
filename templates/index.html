@@ -244,29 +244,74 @@
         .info-box strong {
             color: #333;
         }
+
+        /* Constellation toggle */
+        .const-toggle {
+            display: flex;
+            margin-bottom: 20px;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid #ddd;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 9px;
+            border: none;
+            background: #f5f5f5;
+            color: #777;
+            font-size: 0.88em;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            letter-spacing: 1px;
+        }
+
+        .tab-btn:hover:not(.tab-active) {
+            background: #eee;
+        }
+
+        .tab-active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .glo-label {
+            color: #0099cc;
+            font-weight: 700;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🛰️ GPS Calculator</h1>
-            <p class="subtitle">YUMA Almanac Position Calculator</p>
+            <h1>🛰️ GPS / GLONASS Calculator</h1>
+            <p class="subtitle">YUMA Almanac &amp; TLE Position Calculator</p>
             <a href="/live" style="display:inline-block;margin-top:14px;color:white;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.4);padding:8px 22px;border-radius:20px;text-decoration:none;font-size:0.95em;letter-spacing:1px;transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.25)'" onmouseout="this.style.background='rgba(255,255,255,0.15)'">🌍 Live Sky View</a>
         </header>
 
         <div class="grid">
             <!-- Load Almanac Card -->
             <div class="card">
-                <h2>Load Almanac</h2>
+                <h2>Load Data</h2>
                 <div class="alert error" id="loadAlert"></div>
                 <div class="alert success" id="loadSuccess"></div>
 
-                <div class="form-group">
+                <div class="const-toggle">
+                    <button id="tab-gps" class="tab-btn tab-active" onclick="selectConstellation('GPS')">GPS</button>
+                    <button id="tab-glo" class="tab-btn" onclick="selectConstellation('GLONASS')">GLONASS</button>
+                </div>
+
+                <div class="form-group" id="date-group">
                     <label for="dateInput">Date (YYYY-MM-DD)</label>
                     <input type="text" id="dateInput" placeholder="e.g., 2026-04-19 or 'today'">
                 </div>
 
-                <button id="loadBtn" onclick="loadAlmanac()">Load Almanac</button>
+                <div class="info-box" id="glo-note" style="display:none;">
+                    Fetches current GLONASS TLEs from <strong>Celestrak</strong> (always up to date — no date needed)
+                </div>
+
+                <button id="loadBtn" onclick="loadAlmanac()">Load GPS Almanac</button>
                 <div class="loading" id="loadLoading">
                     <span class="spinner"></span>
                     Loading...
@@ -275,7 +320,7 @@
                 <div id="almanacInfo" style="display: none; margin-top: 20px;">
                     <div class="info-box">
                         <strong>Loaded:</strong> <span id="infoDate"></span><br>
-                        <strong>GPS Week:</strong> <span id="infoWeek"></span><br>
+                        <span id="gps-week-row"><strong>GPS Week:</strong> <span id="infoWeek"></span><br></span>
                         <strong>Satellites:</strong> <span id="infoCount"></span>
                     </div>
                 </div>
@@ -287,7 +332,7 @@
                 <div class="alert error" id="calcAlert"></div>
 
                 <div class="form-group">
-                    <label for="prnInput">PRN Number (1-32)</label>
+                    <label for="prnInput" id="prn-label">PRN Number (1–32)</label>
                     <input type="number" id="prnInput" min="1" max="32" placeholder="e.g., 1">
                 </div>
 
@@ -296,7 +341,7 @@
                     <input type="text" id="timeInput" placeholder="e.g., 2026-04-19 12:00:00 or 'now'">
                 </div>
 
-                <button id="calcBtn" onclick="calculatePosition()" disabled>Calculate</button>
+                <button id="calcBtn" onclick="calculatePosition()">Calculate</button>
                 <div class="loading" id="calcLoading">
                     <span class="spinner"></span>
                     Calculating...
@@ -306,18 +351,10 @@
 
         <!-- Satellites List Card -->
         <div class="card">
-            <h2>Satellites</h2>
+            <h2 id="sat-list-title">Satellites</h2>
             <div id="satellitesContainer" style="display: none;">
-                <table class="satellite-table">
-                    <thead>
-                        <tr>
-                            <th>PRN</th>
-                            <th>Health</th>
-                            <th>Eccentricity</th>
-                            <th>√A (m)</th>
-                            <th>Inclination (°)</th>
-                        </tr>
-                    </thead>
+                <table class="satellite-table" id="sat-table">
+                    <thead id="sat-thead"></thead>
                     <tbody id="satellitesList"></tbody>
                 </table>
             </div>
@@ -334,8 +371,22 @@
     </div>
 
     <script>
-        // Initialize
-        updateCalculateButton();
+        let currentConstellation = 'GPS';
+
+        function selectConstellation(c) {
+            currentConstellation = c;
+            document.getElementById('tab-gps').className = 'tab-btn' + (c === 'GPS' ? ' tab-active' : '');
+            document.getElementById('tab-glo').className = 'tab-btn' + (c === 'GLONASS' ? ' tab-active' : '');
+            document.getElementById('date-group').style.display = c === 'GPS' ? '' : 'none';
+            document.getElementById('glo-note').style.display = c === 'GLONASS' ? '' : 'none';
+            document.getElementById('loadBtn').textContent = c === 'GPS' ? 'Load GPS Almanac' : 'Load GLONASS TLEs';
+            document.getElementById('prn-label').textContent = c === 'GPS' ? 'PRN Number (1–32)' : 'Satellite # (1–30)';
+            document.getElementById('prnInput').max = c === 'GPS' ? 32 : 30;
+            document.getElementById('almanacInfo').style.display = 'none';
+            document.getElementById('satellitesContainer').style.display = 'none';
+            document.getElementById('noSatellites').style.display = 'block';
+            document.getElementById('noSatellites').textContent = 'Load data to see satellites';
+        }
 
         function hideAlert(id) {
             setTimeout(() => {
@@ -358,42 +409,43 @@
         }
 
         async function loadAlmanac() {
-            const dateInput = document.getElementById('dateInput').value || 'today';
-            const btn = document.getElementById('loadBtn');
+            const btn     = document.getElementById('loadBtn');
             const loading = document.getElementById('loadLoading');
-
-            btn.disabled = true;
+            btn.disabled  = true;
             loading.classList.add('show');
             document.getElementById('loadAlert').classList.remove('show');
             document.getElementById('loadSuccess').classList.remove('show');
+
+            const body = { constellation: currentConstellation };
+            if (currentConstellation === 'GPS') {
+                body.date = document.getElementById('dateInput').value || 'today';
+            }
 
             try {
                 const response = await fetch('/api/load-almanac', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ date: dateInput })
+                    body: JSON.stringify(body),
                 });
 
                 const data = await response.json();
 
                 if (!response.ok) {
-                    showError('loadAlert', data.error || 'Failed to load almanac');
+                    showError('loadAlert', data.error || 'Failed to load data');
                     return;
                 }
 
                 showSuccess('loadSuccess', `Loaded ${data.count} satellites`);
 
                 // Update info box
-                document.getElementById('infoDate').textContent = dateInput;
-                document.getElementById('infoWeek').textContent = data.week;
+                const infoDate = currentConstellation === 'GPS' ? (body.date) : data.source;
+                document.getElementById('infoDate').textContent = infoDate;
+                document.getElementById('infoWeek').textContent = data.week || '';
                 document.getElementById('infoCount').textContent = data.count;
+                document.getElementById('gps-week-row').style.display = currentConstellation === 'GPS' ? '' : 'none';
                 document.getElementById('almanacInfo').style.display = 'block';
 
-                // Load satellites list
                 await loadSatellitesList();
-
-                // Enable calculate button
-                updateCalculateButton();
 
             } catch (error) {
                 showError('loadAlert', 'Network error: ' + error.message);
@@ -405,28 +457,42 @@
 
         async function loadSatellitesList() {
             try {
-                const response = await fetch('/api/satellites');
+                const response = await fetch('/api/satellites?constellation=' + currentConstellation);
                 const data = await response.json();
-
                 if (!response.ok) return;
 
+                const thead = document.getElementById('sat-thead');
                 const tbody = document.getElementById('satellitesList');
                 tbody.innerHTML = '';
 
-                data.satellites.forEach(sat => {
-                    const row = tbody.insertRow();
-                    const healthClass = sat.health === 'Healthy' ? 'health-ok' : 'health-bad';
+                if (currentConstellation === 'GPS') {
+                    thead.innerHTML = `<tr>
+                        <th>Label</th><th>Health</th><th>Eccentricity</th><th>√A (m)</th><th>Inclination (°)</th>
+                    </tr>`;
+                    data.satellites.forEach(sat => {
+                        const row = tbody.insertRow();
+                        const hc  = sat.health === 'Healthy' ? 'health-ok' : 'health-bad';
+                        row.innerHTML = `
+                            <td>${sat.label}</td>
+                            <td><span class="${hc}">${sat.health}</span></td>
+                            <td>${sat.e}</td>
+                            <td>${sat.sqA}</td>
+                            <td>${sat.inc}</td>`;
+                    });
+                } else {
+                    thead.innerHTML = `<tr>
+                        <th>Label</th><th>Health</th><th>TLE Name</th>
+                    </tr>`;
+                    data.satellites.forEach(sat => {
+                        const row = tbody.insertRow();
+                        row.innerHTML = `
+                            <td class="glo-label">${sat.label}</td>
+                            <td><span class="health-ok">${sat.health}</span></td>
+                            <td style="font-size:0.9em;color:#666">${sat.name}</td>`;
+                    });
+                }
 
-                    row.innerHTML = `
-                        <td>${sat.id}</td>
-                        <td><span class="${healthClass}">${sat.health}</span></td>
-                        <td>${sat.e}</td>
-                        <td>${sat.sqA}</td>
-                        <td>${sat.inc}</td>
-                    `;
-                });
-
-                document.getElementById('satellitesList').parentElement.parentElement.style.display = 'block';
+                document.getElementById('satellitesContainer').style.display = 'block';
                 document.getElementById('noSatellites').style.display = 'none';
 
             } catch (error) {
@@ -435,13 +501,13 @@
         }
 
         async function calculatePosition() {
-            const prn = document.getElementById('prnInput').value;
+            const prn       = document.getElementById('prnInput').value;
             const timeInput = document.getElementById('timeInput').value || 'now';
-            const btn = document.getElementById('calcBtn');
-            const loading = document.getElementById('calcLoading');
+            const btn       = document.getElementById('calcBtn');
+            const loading   = document.getElementById('calcLoading');
 
             if (!prn) {
-                showError('calcAlert', 'Please enter a PRN number');
+                showError('calcAlert', 'Please enter a satellite number');
                 return;
             }
 
@@ -453,7 +519,7 @@
                 const response = await fetch('/api/calculate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prn: parseInt(prn), time: timeInput })
+                    body: JSON.stringify({ prn: parseInt(prn), time: timeInput, constellation: currentConstellation }),
                 });
 
                 const data = await response.json();
@@ -474,10 +540,13 @@
         }
 
         function displayResults(data) {
+            const labelStyle = data.constellation === 'GLONASS'
+                ? 'color:#0099cc;font-weight:700'
+                : 'color:#5a2d8a;font-weight:700';
             const html = `
                 <div class="result-row">
-                    <div class="result-label">PRN</div>
-                    <div class="result-value">${data.prn}</div>
+                    <div class="result-label">Satellite</div>
+                    <div class="result-value" style="${labelStyle}">${data.label} (${data.constellation})</div>
                 </div>
                 <div class="result-row">
                     <div class="result-label">Time (UTC)</div>
@@ -515,12 +584,6 @@
 
             document.getElementById('resultsContent').innerHTML = html;
             document.getElementById('resultsCard').classList.add('show');
-        }
-
-        function updateCalculateButton() {
-            const btn = document.getElementById('calcBtn');
-            // Button is enabled if almanac is loaded (we could check API, but for now enable it)
-            btn.disabled = false;
         }
 
         // Allow Enter key on inputs

@@ -120,3 +120,59 @@ def geodetic(x, y, z):
 def gps_time_from_datetime(dt):
     naive = dt.replace(tzinfo=None) if dt.tzinfo else dt
     return (naive - GPS_EPOCH).total_seconds()
+
+
+def fetch_tle_group(group):
+    urls = [
+        f"https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=tle",
+        f"https://celestrak.org/pub/TLE/groups/{group}.txt",
+    ]
+    headers = {'User-Agent': 'Mozilla/5.0 (GPS-Calculator)'}
+    for url in urls:
+        try:
+            r = requests.get(url, timeout=15, headers=headers)
+            r.raise_for_status()
+            text = r.text
+            if text and '1 ' in text and not text.lstrip().lower().startswith('no gp'):
+                return text
+        except requests.RequestException:
+            continue
+    return None
+
+
+def parse_tles(text):
+    lines = [ln.strip() for ln in text.strip().splitlines() if ln.strip()]
+    tles = []
+    i = 0
+    while i + 2 <= len(lines) - 1:
+        if lines[i + 1].startswith('1 ') and lines[i + 2].startswith('2 '):
+            tles.append({'name': lines[i], 'line1': lines[i + 1], 'line2': lines[i + 2]})
+            i += 3
+        else:
+            i += 1
+    return tles
+
+
+def _gmst_rad(jd):
+    T = (jd - 2451545.0) / 36525.0
+    theta = (280.46061837 + 360.98564736629 * (jd - 2451545.0)
+             + T * T * (0.000387933 - T / 38710000.0))
+    return math.radians(theta % 360.0)
+
+
+def propagate_tle(tle, dt):
+    from sgp4.api import Satrec, jday
+    sat = Satrec.twoline2rv(tle['line1'], tle['line2'])
+    naive = dt.replace(tzinfo=None) if dt.tzinfo else dt
+    jd, fr = jday(naive.year, naive.month, naive.day,
+                  naive.hour, naive.minute, naive.second + naive.microsecond / 1e6)
+    e, r, _ = sat.sgp4(jd, fr)
+    if e != 0:
+        return None
+    rx, ry, rz = r[0] * 1000.0, r[1] * 1000.0, r[2] * 1000.0  # km → m (ECI)
+    gmst = _gmst_rad(jd + fr)
+    cg, sg = math.cos(gmst), math.sin(gmst)
+    x = rx * cg + ry * sg
+    y = -rx * sg + ry * cg
+    z = rz
+    return {'x': x, 'y': y, 'z': z, 'r': math.sqrt(x * x + y * y + z * z)}
