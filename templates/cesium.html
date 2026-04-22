@@ -976,8 +976,55 @@ window.addEventListener('resize', () => {
     if (view2D && lastSatellites.length) drawSkyPlot(lastSatellites);
 });
 
+// ── Browser-side TLE push ─────────────────────────────────────────────
+// Render's egress IPs cannot reach celestrak.org, so the user's browser
+// fetches TLEs (celestrak's gp.php sends CORS headers) and hands the
+// text to the backend which parses and caches it.
+async function pushTLEsFromBrowser(group, constellation) {
+    const urls = [
+        `https://celestrak.org/NORAD/elements/gp.php?GROUP=${group}&FORMAT=tle`,
+        `https://www.celestrak.com/NORAD/elements/gp.php?GROUP=${group}&FORMAT=tle`,
+    ];
+    for (const url of urls) {
+        try {
+            const resp = await fetch(url, { cache: 'no-store' });
+            if (!resp.ok) continue;
+            const text = await resp.text();
+            if (!text || !text.includes('1 ')) continue;
+            const pushResp = await fetch('/api/push-tles', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ constellation, text }),
+            });
+            const result = await pushResp.json();
+            if (result.success) {
+                console.log(`Pushed ${result.count} ${constellation} TLEs to backend`);
+                return true;
+            }
+        } catch (e) {
+            console.warn(`TLE push failed for ${constellation} via ${url}:`, e.message);
+        }
+    }
+    return false;
+}
+
+async function bootstrapTLEs() {
+    await Promise.all([
+        pushTLEsFromBrowser('glo-ops', 'GLONASS'),
+        pushTLEsFromBrowser('beidou',  'BEIDOU'),
+        pushTLEsFromBrowser('galileo', 'GALILEO'),
+    ]);
+}
+
+// Kick off TLE push, then start live position polling. The polling
+// doesn't wait for the push to finish — GPS sats appear immediately,
+// and GLO/BDS/GAL join within a few seconds.
+bootstrapTLEs();
 fetchLive();
 setInterval(fetchLive, 5000);
+
+// Refresh TLE cache every 6 hours from the browser so the server stays current.
+setInterval(bootstrapTLEs, 6 * 3600 * 1000);
 </script>
 </body>
 </html>

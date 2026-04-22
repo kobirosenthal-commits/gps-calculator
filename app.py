@@ -246,6 +246,50 @@ def satellite_detail():
     })
 
 
+@app.route('/api/push-tles', methods=['POST'])
+def push_tles():
+    """Accept TLE text fetched by the user's browser and cache it server-side.
+    Needed because Render's outbound IPs cannot reach celestrak.org directly —
+    the browser does the fetch and hands the text back to us."""
+    global glo_data, bei_data, gal_data
+
+    payload = request.json
+    if payload is None:
+        return jsonify({'error': 'Invalid JSON'}), 400
+
+    constellation = payload.get('constellation', '').upper()
+    text = payload.get('text', '')
+
+    if constellation not in ('GLONASS', 'BEIDOU', 'GALILEO'):
+        return jsonify({'error': f'Invalid constellation: {constellation}'}), 400
+    if not text or '1 ' not in text:
+        return jsonify({'error': 'No valid TLE content'}), 400
+
+    try:
+        tles = parse_tles(text)
+    except Exception as e:
+        return jsonify({'error': f'Parse error: {e}'}), 400
+
+    if not tles:
+        return jsonify({'error': 'No TLEs parsed'}), 400
+
+    prefix = {'GLONASS': 'R', 'BEIDOU': 'C', 'GALILEO': 'E'}[constellation]
+    for i, tle in enumerate(tles):
+        tle['id'] = i + 1
+        tle['label'] = f"{prefix}{i + 1:02d}"
+
+    entry = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
+    if constellation == 'GLONASS':
+        glo_data = entry
+    elif constellation == 'BEIDOU':
+        bei_data = entry
+    else:
+        gal_data = entry
+
+    app.logger.info(f"Browser pushed {len(tles)} {constellation} TLEs")
+    return jsonify({'success': True, 'count': len(tles), 'constellation': constellation})
+
+
 @app.route('/api/live-positions', methods=['GET'])
 def live_positions():
     global almanac_data, glo_data, bei_data, gal_data
