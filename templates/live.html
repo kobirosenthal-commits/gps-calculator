@@ -365,6 +365,13 @@ function toggleConst(c) {
             obj.trail.line.visible = enabledConst[c];
         }
     }
+    for (const [key, link] of Object.entries(links)) {
+        const d = satData[key];
+        if (d && d.constellation === c) {
+            link.line.visible = enabledConst[c];
+            link.sprite.visible = enabledConst[c];
+        }
+    }
     updatePanel(lastSatellites);
 }
 

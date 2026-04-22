@@ -3,6 +3,8 @@ from datetime import datetime, timedelta, timezone
 from gps_core import (fetch_almanac, parse_yuma, propagate, geodetic, gps_time_from_datetime,
                       fetch_tle_group, parse_tles, propagate_tle)
 import math
+import threading
+import time
 
 app = Flask(__name__)
 
@@ -26,6 +28,30 @@ def _load_tle_constellation(group, label_prefix):
         return tles
     except Exception:
         return None
+
+
+def _tle_refresh_worker():
+    """Background thread that refreshes GLONASS/BeiDou TLEs without blocking requests."""
+    global glo_data, bei_data
+    while True:
+        for constellation, group, prefix, cache_name in (
+            ('GLONASS', 'glo-ops', 'R', 'glo'),
+            ('BEIDOU',  'beidou',  'C', 'bei'),
+        ):
+            try:
+                tles = _load_tle_constellation(group, prefix)
+                if tles:
+                    fetched = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                    if cache_name == 'glo':
+                        glo_data = {'tles': tles, 'fetched': fetched}
+                    else:
+                        bei_data = {'tles': tles, 'fetched': fetched}
+            except Exception:
+                pass
+        time.sleep(6 * 3600)  # refresh every 6 hours
+
+
+threading.Thread(target=_tle_refresh_worker, daemon=True).start()
 
 
 @app.route('/')
@@ -163,23 +189,7 @@ def live_positions():
                     }
                     break
 
-    # Auto-load GLONASS TLEs (skip if it times out)
-    if not glo_data['tles']:
-        try:
-            tles = _load_tle_constellation('glo-ops', 'R')
-            if tles:
-                glo_data = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
-        except Exception:
-            pass
-
-    # Auto-load BeiDou TLEs (skip if it times out)
-    if not bei_data['tles']:
-        try:
-            tles = _load_tle_constellation('beidou', 'C')
-            if tles:
-                bei_data = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
-        except Exception:
-            pass
+    # GLONASS/BeiDou TLEs are loaded by a background thread — never blocks this request
 
     if not almanac_data['satellites'] and not glo_data['tles'] and not bei_data['tles']:
         return jsonify({'error': 'Could not load satellite data'}), 503
