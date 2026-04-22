@@ -127,13 +127,12 @@ def fetch_tle_group(group):
         f"https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=tle",
         f"https://www.celestrak.com/NORAD/elements/{group}.txt",
         f"https://celestrak.org/pub/TLE/groups/{group}.txt",
-        f"http://celestrak.org/pub/TLE/groups/{group}.txt",
     ]
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     for url in urls:
         for verify in (True, False):
             try:
-                r = requests.get(url, timeout=5, headers=headers, verify=verify)
+                r = requests.get(url, timeout=2, headers=headers, verify=verify)
                 r.raise_for_status()
                 text = r.text
                 if text and '1 ' in text and not text.lstrip().lower().startswith('no gp'):

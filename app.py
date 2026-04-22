@@ -163,17 +163,23 @@ def live_positions():
                     }
                     break
 
-    # Auto-load GLONASS TLEs
+    # Auto-load GLONASS TLEs (skip if it times out)
     if not glo_data['tles']:
-        tles = _load_tle_constellation('glo-ops', 'R')
-        if tles:
-            glo_data = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
+        try:
+            tles = _load_tle_constellation('glo-ops', 'R')
+            if tles:
+                glo_data = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
+        except Exception:
+            pass
 
-    # Auto-load BeiDou TLEs
+    # Auto-load BeiDou TLEs (skip if it times out)
     if not bei_data['tles']:
-        tles = _load_tle_constellation('beidou', 'C')
-        if tles:
-            bei_data = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
+        try:
+            tles = _load_tle_constellation('beidou', 'C')
+            if tles:
+                bei_data = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
+        except Exception:
+            pass
 
     if not almanac_data['satellites'] and not glo_data['tles'] and not bei_data['tles']:
         return jsonify({'error': 'Could not load satellite data'}), 503

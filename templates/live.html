@@ -520,12 +520,21 @@ function updatePanel(satsArr) {
             .map(s => ({ ...s, ...rangeElev(receiver.ecef, s.x, s.y, s.z) }))
             .filter(s => s.elev >= mask)
             .sort((a, b) => b.elev - a.elev);
-        const sigCount = {};
-        for (const s of vis) for (const sig of getSignals(s)) sigCount[sig] = (sigCount[sig] || 0) + 1;
+        const sigCount = {}, constCount = { GPS: 0, GLONASS: 0, BEIDOU: 0 };
+        let totalSigs = 0;
+        for (const s of vis) {
+            constCount[s.constellation]++;
+            for (const sig of getSignals(s)) {
+                sigCount[sig] = (sigCount[sig] || 0) + 1;
+                totalSigs++;
+            }
+        }
         const sigSummary = Object.entries(sigCount).sort((a,b) => a[0].localeCompare(b[0]))
             .map(([sig, n]) => { const st = SIG_STYLE[sig] || 'color:#aaa;border-color:#555'; return `<span class="sig-b" style="${st}">${sig} ×${n}</span>`; }).join('');
-        sub.innerHTML = 'In view: ' + vis.length + ' satellite' + (vis.length !== 1 ? 's' : '') +
-            (sigSummary ? '<div class="sig-sum">' + sigSummary + '</div>' : '');
+        const constSummary = ['GPS', 'GLONASS', 'BEIDOU'].filter(c => constCount[c] > 0)
+            .map(c => `<span style="color:${c === 'GLONASS' ? '#00ddff' : c === 'BEIDOU' ? '#ffcc00' : '#00ff88'}">${c}: ${constCount[c]}</span>`).join(' • ');
+        sub.innerHTML = 'In view: ' + vis.length + ' satellite' + (vis.length !== 1 ? 's' : '') + ' (' + constSummary + ')' +
+            (sigSummary ? '<div class="sig-sum">Signals: ' + totalSigs + ' • ' + sigSummary + '</div>' : '');
         hdr.className   = 'recv';
         hdr.innerHTML   = '<span></span><span>ID</span><span>Range</span><span>Elev</span>';
         lst.innerHTML   = vis.map(s => {
