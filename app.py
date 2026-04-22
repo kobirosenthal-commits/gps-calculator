@@ -60,7 +60,7 @@ threading.Thread(target=_tle_refresh_worker, daemon=True).start()
 
 @app.route('/')
 def index():
-    return render_template('live.html')
+    return render_template('cesium.html')
 
 
 @app.route('/calculator')
@@ -175,14 +175,53 @@ def get_satellites():
     return jsonify({'satellites': result, 'date': almanac_data['date'], 'constellation': 'GPS'})
 
 
-@app.route('/live')
-def live():
-    return render_template('live.html')
-
-
 @app.route('/cesium')
 def cesium_view():
     return render_template('cesium.html')
+
+
+@app.route('/api/satellite-detail', methods=['GET'])
+def satellite_detail():
+    label = request.args.get('label', '')
+    constellation = request.args.get('constellation', 'GPS').upper()
+
+    if constellation == 'GPS':
+        try:
+            prn = int(label[1:])
+        except (ValueError, IndexError):
+            return jsonify({'error': 'Invalid label'}), 400
+        sat = next((s for s in almanac_data['satellites'] if s['id'] == prn), None)
+        if not sat:
+            return jsonify({'error': 'Not found'}), 404
+        return jsonify({
+            'label': label, 'constellation': 'GPS',
+            'almanac': {
+                'gps_week':          sat['wk'],
+                'toa':               sat['toa'],
+                'sqrt_a':            sat['sqA'],
+                'semi_major_axis_km': sat['sqA'] ** 2 / 1000,
+                'eccentricity':      sat['e'],
+                'inclination_deg':   math.degrees(sat['inc']),
+                'raan_deg':          math.degrees(sat['Om0']),
+                'raan_rate':         sat['dOm'],
+                'arg_perigee_deg':   math.degrees(sat['w']),
+                'mean_anomaly_deg':  math.degrees(sat['M0']),
+                'af0':               sat['af0'],
+                'af1':               sat['af1'],
+                'health':            sat['health'],
+            }
+        })
+
+    cache = {'GLONASS': glo_data, 'BEIDOU': bei_data, 'GALILEO': gal_data}.get(constellation)
+    if not cache or not cache['tles']:
+        return jsonify({'error': f'No {constellation} data available'}), 400
+    tle = next((t for t in cache['tles'] if t['label'] == label), None)
+    if not tle:
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify({
+        'label': label, 'constellation': constellation,
+        'tle': {'name': tle['name'], 'line1': tle['line1'], 'line2': tle['line2']},
+    })
 
 
 @app.route('/api/live-positions', methods=['GET'])

@@ -55,12 +55,18 @@
         .btn-geo   { background: #1a6a3a; color: #e0f0ff; }
         .btn-clear { background: #4a1a1a; color: #ffaaaa; }
         #recv-status { margin-top: 8px; font-size: 0.8em; color: #5599cc; min-height: 1.2em; }
+        #btn-2d { color: #aaa; background: none; font-family: inherit; font-size: 0.85em; border: 1px solid #333; padding: 5px 12px; border-radius: 20px; cursor: pointer; transition: all 0.2s; }
+        #btn-2d:hover:not(:disabled) { color: #fff; border-color: #7ecfff; }
+        #btn-2d.active { color: #7ecfff; border-color: #7ecfff; background: rgba(126,207,255,0.1); }
+        #btn-2d:disabled { opacity: 0.3; cursor: not-allowed; }
+        #sky-canvas { display: none; position: absolute; inset: 0; z-index: 5; }
 
-        #sat-panel { top: 60px; right: 20px; bottom: 20px; width: 280px; overflow-y: auto; font-size: 0.82em; }
-        #sat-panel h3 { padding: 10px 14px; color: #7ecfff; border-bottom: 1px solid #1a3a5c; letter-spacing: 1px; font-size: 0.95em; position: sticky; top: 0; background: rgba(0,0,20,0.97); }
-        #panel-sub { padding: 4px 14px 6px; font-size: 0.78em; color: #5599cc; border-bottom: 1px solid #1a3a5c; background: rgba(0,0,20,0.97); position: sticky; top: 37px; line-height: 1.7; }
+        #sat-panel { top: 60px; right: 20px; bottom: 20px; width: 280px; font-size: 0.82em; display: flex; flex-direction: column; overflow: hidden; }
+        #sat-panel h3 { padding: 10px 14px; color: #7ecfff; border-bottom: 1px solid #1a3a5c; letter-spacing: 1px; font-size: 0.95em; flex-shrink: 0; }
+        #panel-sub { padding: 4px 14px 6px; font-size: 0.78em; color: #5599cc; border-bottom: 1px solid #1a3a5c; line-height: 1.7; flex-shrink: 0; }
         #panel-sub .sig-sum { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
-        #col-header { padding: 5px 14px; border-bottom: 1px solid #1a3a5c; font-size: 0.75em; color: #4477aa; position: sticky; top: 57px; background: rgba(0,0,15,0.97); display: grid; }
+        #col-header { padding: 5px 14px; border-bottom: 1px solid #1a3a5c; font-size: 0.75em; color: #4477aa; display: grid; flex-shrink: 0; }
+        #sat-list { overflow-y: auto; flex: 1; min-height: 0; }
         #col-header.no-recv { grid-template-columns: 14px 40px 1fr; }
         #col-header.recv    { grid-template-columns: 14px 40px 52px 42px; }
         .sat-row { padding: 5px 14px; border-bottom: 1px solid rgba(255,255,255,0.04); align-items: start; cursor: pointer; transition: background 0.15s; display: grid; gap: 2px 4px; }
@@ -107,6 +113,27 @@
         #sat-panel::-webkit-scrollbar-track { background: transparent; }
         #sat-panel::-webkit-scrollbar-thumb { background: #1a3a5c; border-radius: 2px; }
 
+        /* Satellite detail panel */
+        #sat-detail { display: none; position: absolute; right: 310px; top: 60px; width: 310px; max-height: calc(100vh - 80px); overflow-y: auto; z-index: 15; font-size: 0.8em; }
+        #sd-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid #1a3a5c; position: sticky; top: 0; background: rgba(0,0,20,0.97); }
+        #sd-title { font-size: 1.05em; font-weight: 700; letter-spacing: 1px; }
+        #sd-close { background: none; border: none; color: #5599cc; cursor: pointer; font-size: 1.1em; padding: 2px 6px; transition: color 0.15s; }
+        #sd-close:hover { color: #fff; }
+        #sd-body { padding: 10px 14px; line-height: 1.9; }
+        .sd-section { margin-bottom: 14px; }
+        .sd-section h4 { color: #5599cc; font-size: 0.78em; letter-spacing: 1.5px; margin-bottom: 5px; border-bottom: 1px solid #1a3a5c; padding-bottom: 3px; }
+        .sd-row { display: flex; justify-content: space-between; gap: 8px; font-size: 0.82em; }
+        .sd-lbl { color: #4477aa; flex-shrink: 0; }
+        .sd-val { color: #e0f0ff; font-weight: 600; text-align: right; }
+        .sd-sf { text-align: center; padding: 10px 8px; background: rgba(40,80,160,0.15); border: 1px solid #1a3a5c; border-radius: 6px; margin: 4px 0 6px; }
+        .sd-sf-num { font-size: 1.7em; font-weight: 700; color: #7ecfff; }
+        .sd-sf-label { font-size: 0.75em; color: #5599cc; margin-top: 2px; }
+        .sd-sf-desc { font-size: 0.8em; color: #aac; margin-top: 5px; }
+        .tle-box { font-family: monospace; font-size: 0.7em; color: #8aaccc; background: rgba(0,20,50,0.6); padding: 5px 7px; border-radius: 3px; margin: 3px 0; word-break: break-all; line-height: 1.6; }
+        #sat-detail::-webkit-scrollbar { width: 4px; }
+        #sat-detail::-webkit-scrollbar-track { background: transparent; }
+        #sat-detail::-webkit-scrollbar-thumb { background: #1a3a5c; border-radius: 2px; }
+
         /* Zoom controls */
         #zoom-ctrl {
             position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
@@ -126,6 +153,7 @@
 
 <div id="loading"><div class="spinner"></div><p>LOADING LIVE DATA...</p></div>
 <div id="cesiumContainer"></div>
+<canvas id="sky-canvas"></canvas>
 
 <div id="topbar">
     <h1>🛰️ GPS / GLONASS / BeiDou / Galileo LIVE SKY VIEW</h1>
@@ -136,8 +164,7 @@
         <button id="tog-gal" class="tog-btn tog-gal active" onclick="toggleConst('GALILEO')">GAL</button>
     </div>
     <div id="topbar-right">
-        <a href="/">Three.js View</a>
-        <a href="/cesium" class="active-view">Cesium View</a>
+        <button id="btn-2d" disabled onclick="toggle2D()">⊙ 2D Sky Plot</button>
         <a href="/calculator">⚙ Calculator</a>
     </div>
 </div>
@@ -175,6 +202,14 @@
         <span></span><span>ID</span><span>Lat / Lon</span>
     </div>
     <div id="sat-list"></div>
+</div>
+
+<div class="card" id="sat-detail">
+    <div id="sd-header">
+        <span id="sd-title"></span>
+        <button id="sd-close" onclick="closeSatDetail()">✕</button>
+    </div>
+    <div id="sd-body"></div>
 </div>
 
 <div id="zoom-ctrl">
@@ -427,6 +462,7 @@ function updateSatellites(satellites) {
 
     refreshLinks(satellites);
     updatePanel(satellites);
+    if (view2D) drawSkyPlot(satellites);
 }
 
 // ── Receiver & links ──────────────────────────────────────────────────
@@ -494,6 +530,7 @@ function setReceiver() {
     placeRecvMarker(ecef);
     viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(lon, lat, 50000000), duration: 1.5 });
     document.getElementById('recv-status').textContent = lat.toFixed(4) + '°, ' + lon.toFixed(4) + '°';
+    document.getElementById('btn-2d').disabled = false;
     if (lastSatellites.length) { refreshLinks(lastSatellites); updatePanel(lastSatellites); }
 }
 
@@ -514,6 +551,15 @@ function clearReceiver() {
     if (recvEntity) { viewer.entities.remove(recvEntity); recvEntity = null; }
     for (const key of Object.keys(linkEntities)) { viewer.entities.remove(linkEntities[key]); delete linkEntities[key]; }
     document.getElementById('recv-status').textContent = '';
+    document.getElementById('btn-2d').disabled = true;
+    if (view2D) {
+        view2D = false;
+        const btn = document.getElementById('btn-2d');
+        btn.classList.remove('active');
+        btn.textContent = '⊙ 2D Sky Plot';
+        document.getElementById('cesiumContainer').style.display = '';
+        document.getElementById('sky-canvas').style.display = 'none';
+    }
     updatePanel(lastSatellites);
 }
 
@@ -538,7 +584,7 @@ function updatePanel(satsArr) {
         lst.innerHTML   = [...vis0].sort((a, b) => {
             if (a.constellation !== b.constellation) return a.constellation < b.constellation ? -1 : 1;
             return a.prn - b.prn;
-        }).map(s => `<div class="sat-row no-recv" onclick="flyToSat('${s.label}')">
+        }).map(s => `<div class="sat-row no-recv" onclick="selectSat('${s.label}')">
             <div><div class="dot ${dotCls(s)}"></div></div>
             <div class="prn" style="color:${satColor(s.constellation,s.healthy)}">${s.label}</div>
             <div class="cell">${s.lat}°<br>${s.lon}°</div>
@@ -568,7 +614,7 @@ function updatePanel(satsArr) {
         hdr.innerHTML   = '<span></span><span>ID</span><span>Range</span><span>Elev</span>';
         lst.innerHTML   = vis.map(s => {
             const ec = s.elev > 45 ? '#00ff88' : s.elev > 20 ? '#ffdd00' : '#ff8800';
-            return `<div class="sat-row recv" onclick="flyToSat('${s.label}')">
+            return `<div class="sat-row recv" onclick="selectSat('${s.label}')">
                 <div><div class="dot ${dotCls(s)}"></div></div>
                 <div class="prn" style="color:${satColor(s.constellation,s.healthy)}">${s.label}</div>
                 <div class="cell">${Math.round(s.range).toLocaleString()} km</div>
@@ -579,11 +625,10 @@ function updatePanel(satsArr) {
     }
 }
 
-// ── Click satellite row → fly to it ──────────────────────────────────
+// ── Click satellite row → fly + open detail ───────────────────────────
 function flyToSat(label) {
     const d = satData[label];
     if (!d) return;
-    // Fly to a position slightly outside the satellite's orbit for a good view
     const scale = 1.25;
     viewer.camera.flyTo({
         destination: new Cesium.Cartesian3(d.x * scale, d.y * scale, d.z * scale),
@@ -591,14 +636,26 @@ function flyToSat(label) {
     });
 }
 
+function selectSat(label) {
+    if (satData[label]) openSatDetail(satData[label]);
+    if (!view2D) flyToSat(label);
+}
+
 // ── Hover tooltip ─────────────────────────────────────────────────────
 const tooltip = document.getElementById('tooltip');
 const evtHandler = new Cesium.ScreenSpaceEventHandler(viewer.canvas);
 
+function pickedLabel(picked) {
+    // Cesium: picked.id is the Entity object; the string id is at picked.id.id
+    if (!Cesium.defined(picked)) return null;
+    const label = picked.id && picked.id.id;
+    return (typeof label === 'string' && satData[label]) ? label : null;
+}
+
 evtHandler.setInputAction(function(movement) {
-    const picked = viewer.scene.pick(movement.endPosition);
-    if (Cesium.defined(picked) && typeof picked.id === 'string' && satData[picked.id]) {
-        const d = satData[picked.id];
+    const label = pickedLabel(viewer.scene.pick(movement.endPosition));
+    if (label) {
+        const d = satData[label];
         let extra = '';
         if (receiver) {
             const { range, elev } = rangeElev(receiver.ecef, d.x, d.y, d.z);
@@ -610,7 +667,7 @@ evtHandler.setInputAction(function(movement) {
         tooltip.style.display = 'block';
         tooltip.style.left    = (movement.endPosition.x + 14) + 'px';
         tooltip.style.top     = (movement.endPosition.y - 10) + 'px';
-        tooltip.innerHTML = `<div class="t-prn" style="color:${satColor(d.constellation,d.healthy)}">${picked.id}</div>
+        tooltip.innerHTML = `<div class="t-prn" style="color:${satColor(d.constellation,d.healthy)}">${label}</div>
             <div><span class="t-lbl">Type:   </span><span class="t-val">${d.constellation}</span></div>
             <div><span class="t-lbl">Health: </span><span class="t-val">${d.healthy ? '✓ Healthy' : '✗ Unhealthy'}</span></div>
             <div><span class="t-lbl">Lat:    </span><span class="t-val">${d.lat}°</span></div>
@@ -634,6 +691,16 @@ evtHandler.setInputAction(function(click) {
     setReceiver();
 }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
+// Entity click — selectedEntityChanged is the reliable Cesium API for this
+viewer.selectedEntityChanged.addEventListener(function(entity) {
+    if (clickMode || !entity) return;
+    const label = entity.id;
+    if (typeof label === 'string' && satData[label]) {
+        openSatDetail(satData[label]);
+    }
+    viewer.selectedEntity = undefined; // clear selection highlight
+});
+
 // ── Data fetch ────────────────────────────────────────────────────────
 async function fetchLive() {
     try {
@@ -655,6 +722,261 @@ async function fetchLive() {
         document.getElementById('loading').style.display = 'none';
     }
 }
+
+// ── Satellite detail panel ────────────────────────────────────────────
+let skyPlotSats = [];
+let detailRefreshTimer = null;
+
+const NAV_SF = {
+    GPS:     ['Clock correction & SV accuracy','Ephemeris I — Kepler elements','Ephemeris II — Kepler elements','Almanac & ionospheric model','Almanac & satellite health'],
+    GLONASS: ['Clock & frequency offset','Ephemeris (position)','Ephemeris (velocity & accel)','Almanac data','System time & health'],
+    BEIDOU:  ['Clock & basic nav data','Ephemeris I','Ephemeris II','Almanac I','Almanac II'],
+    GALILEO: ['Ephemeris & clock (E1B)','Ionosphere (E1B)','BGD & health','Clock & signal health','Almanac'],
+};
+const NAV_META = {
+    GPS:     { label: 'Subframe', total: 5,  period: '30 s',  step: 6 },
+    GLONASS: { label: 'String',   total: 15, period: '30 s',  step: 2 },
+    BEIDOU:  { label: 'Subframe', total: 5,  period: '30 s',  step: 6 },
+    GALILEO: { label: 'Page',     total: 15, period: '30 s',  step: 2 },
+};
+
+function currentNavMsg(constellation) {
+    const meta = NAV_META[constellation];
+    if (!meta) return null;
+    const gpsEpoch = new Date('1980-01-06T00:00:00Z');
+    const tow = ((Date.now() - gpsEpoch.getTime()) / 1000 + 18) % 604800;
+    const idx = Math.floor(tow % (meta.total * meta.step) / meta.step) + 1;
+    const desc = (NAV_SF[constellation] || [])[((idx - 1) % 5)];
+    return { ...meta, index: idx, desc };
+}
+
+function sdRow(lbl, val) {
+    return `<div class="sd-row"><span class="sd-lbl">${lbl}</span><span class="sd-val">${val}</span></div>`;
+}
+
+function renderNavBlock(constellation) {
+    const nm = currentNavMsg(constellation);
+    if (!nm) return '';
+    return `<div class="sd-sf" id="sd-sf-display">
+        <div class="sd-sf-num">${nm.label} ${nm.index} / ${nm.total}</div>
+        <div class="sd-sf-label">${nm.period} frame &nbsp;·&nbsp; ${constellation}</div>
+        <div class="sd-sf-desc">${nm.desc || ''}</div>
+    </div>`;
+}
+
+function renderSatDetail(data, sat, rangeKm, elev, az) {
+    let html = '<div class="sd-section"><h4>OVERVIEW</h4>';
+    if (rangeKm !== null) {
+        html += sdRow('Range',     Math.round(rangeKm).toLocaleString() + ' km');
+        html += sdRow('Elevation', elev.toFixed(2) + '°');
+        html += sdRow('Azimuth',   az.toFixed(2) + '°');
+    }
+    html += sdRow('Latitude',  sat.lat + '°');
+    html += sdRow('Longitude', sat.lon + '°');
+    html += sdRow('Altitude',  sat.alt_km + ' km');
+    html += sdRow('Health', sat.healthy
+        ? '<span style="color:#00ff88">✓ Healthy</span>'
+        : '<span style="color:#ff5555">✗ Unhealthy</span>');
+    html += '</div>';
+
+    if (data.almanac) {
+        const a = data.almanac;
+        html += '<div class="sd-section"><h4>ALMANAC / EPHEMERIS</h4>';
+        html += sdRow('GPS Week',         a.gps_week);
+        html += sdRow('ToA',              a.toa.toFixed(0) + ' s');
+        html += sdRow('√a',               a.sqrt_a.toFixed(3) + ' m½');
+        html += sdRow('Semi-major axis',  a.semi_major_axis_km.toFixed(1) + ' km');
+        html += sdRow('Eccentricity',     a.eccentricity.toFixed(8));
+        html += sdRow('Inclination',      a.inclination_deg.toFixed(4) + '°');
+        html += sdRow('RAAN',             a.raan_deg.toFixed(4) + '°');
+        html += sdRow('RAAN rate',        a.raan_rate.toExponential(3) + ' rad/s');
+        html += sdRow('Arg. perigee',     a.arg_perigee_deg.toFixed(4) + '°');
+        html += sdRow('Mean anomaly',     a.mean_anomaly_deg.toFixed(4) + '°');
+        html += sdRow('Clock bias (af₀)', a.af0.toExponential(3) + ' s');
+        html += sdRow('Clock drift (af₁)',a.af1.toExponential(3) + ' s/s');
+        html += '</div>';
+    }
+
+    if (data.tle) {
+        html += '<div class="sd-section"><h4>TLE EPHEMERIS</h4>';
+        html += sdRow('Name', data.tle.name);
+        html += `<div class="tle-box">${data.tle.line1}</div>`;
+        html += `<div class="tle-box">${data.tle.line2}</div>`;
+        html += '</div>';
+    }
+
+    html += '<div class="sd-section"><h4>NAVIGATION MESSAGE</h4>' + renderNavBlock(sat.constellation) + '</div>';
+    document.getElementById('sd-body').innerHTML = html;
+}
+
+function openSatDetail(sat) {
+    clearInterval(detailRefreshTimer);
+    const title = document.getElementById('sd-title');
+    title.textContent = sat.label;
+    title.style.color = satColor(sat.constellation, sat.healthy);
+    document.getElementById('sd-body').innerHTML = '<div style="color:#5599cc;padding:8px 0">Loading…</div>';
+    document.getElementById('sat-detail').style.display = 'block';
+
+    let rangeKm = null, elev = null, az = null;
+    if (receiver) {
+        const ae = azelFromEcef(receiver.ecef, sat.x, sat.y, sat.z);
+        rangeKm = ae.range; elev = ae.elev; az = ae.az;
+    }
+
+    fetch(`/api/satellite-detail?label=${encodeURIComponent(sat.label)}&constellation=${sat.constellation}`)
+        .then(r => r.json())
+        .then(data => {
+            renderSatDetail(data, sat, rangeKm, elev, az);
+            detailRefreshTimer = setInterval(() => {
+                const el = document.getElementById('sd-sf-display');
+                if (el) el.outerHTML = renderNavBlock(sat.constellation);
+            }, 1000);
+        })
+        .catch(() => {
+            document.getElementById('sd-body').innerHTML = '<div style="color:#ff5555">Failed to load</div>';
+        });
+}
+
+function closeSatDetail() {
+    clearInterval(detailRefreshTimer);
+    document.getElementById('sat-detail').style.display = 'none';
+}
+
+// Canvas click → find nearest plotted satellite
+document.getElementById('sky-canvas').addEventListener('click', function(e) {
+    if (!view2D) return;
+    const rect = this.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    let best = null, bestD = 22;
+    for (const { sat, sx, sy } of skyPlotSats) {
+        const d = Math.hypot(mx - sx, my - sy);
+        if (d < bestD) { bestD = d; best = sat; }
+    }
+    if (best) openSatDetail(best);
+});
+
+// ── 2D Sky Plot ───────────────────────────────────────────────────────
+let view2D = false;
+
+function toggle2D() {
+    if (!receiver) return;
+    view2D = !view2D;
+    const btn = document.getElementById('btn-2d');
+    btn.classList.toggle('active', view2D);
+    btn.textContent = view2D ? '🌐 3D Globe' : '⊙ 2D Sky Plot';
+    document.getElementById('cesiumContainer').style.display = view2D ? 'none' : '';
+    document.getElementById('sky-canvas').style.display = view2D ? 'block' : 'none';
+    document.getElementById('zoom-ctrl').style.display = view2D ? 'none' : '';
+    if (view2D && lastSatellites.length) drawSkyPlot(lastSatellites);
+}
+
+function azelFromEcef(recv, satX, satY, satZ) {
+    const dx = satX - recv.x, dy = satY - recv.y, dz = satZ - recv.z;
+    const range = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    const ux = dx/range, uy = dy/range, uz = dz/range;
+    const lon  = Math.atan2(recv.y, recv.x);
+    const p    = Math.sqrt(recv.x*recv.x + recv.y*recv.y);
+    const lat  = Math.atan2(recv.z, p * (1 - 0.00669437999014));
+    const slat = Math.sin(lat), clat = Math.cos(lat);
+    const slon = Math.sin(lon), clon = Math.cos(lon);
+    const n = -slat*clon*ux - slat*slon*uy + clat*uz;
+    const e = -slon*ux + clon*uy;
+    const u =  clat*clon*ux + clat*slon*uy + slat*uz;
+    return {
+        range: range / 1000,
+        elev:  Math.asin(Math.max(-1, Math.min(1, u))) * 180 / Math.PI,
+        az:    (Math.atan2(e, n) * 180 / Math.PI + 360) % 360,
+    };
+}
+
+function drawSkyPlot(satellites) {
+    const canvas = document.getElementById('sky-canvas');
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width  = window.innerWidth  * dpr;
+    canvas.height = window.innerHeight * dpr;
+    canvas.style.width  = window.innerWidth  + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    const W = window.innerWidth, H = window.innerHeight;
+    const cx = W / 2;
+    const cy = H / 2;
+    const R  = Math.min(W, H) * 0.42;
+
+    ctx.fillStyle = '#000008';
+    ctx.fillRect(0, 0, W, H);
+
+    // Elevation rings at 0°, 30°, 60°
+    for (const elDeg of [0, 30, 60]) {
+        const r = R * (90 - elDeg) / 90;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(80,130,220,0.3)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = '#3a5a88';
+        ctx.font = '11px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(elDeg + '°', cx + r + 4, cy);
+    }
+
+    // Azimuth spokes every 45°
+    ctx.strokeStyle = 'rgba(80,130,220,0.18)';
+    ctx.lineWidth = 1;
+    for (let a = 0; a < 360; a += 45) {
+        const rad = a * Math.PI / 180;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + R * Math.sin(rad), cy - R * Math.cos(rad));
+        ctx.stroke();
+    }
+
+    // Cardinal labels
+    const DIRS = [['N',0],['NE',45],['E',90],['SE',135],['S',180],['SW',225],['W',270],['NW',315]];
+    ctx.fillStyle = '#7ecfff';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const [lbl, az] of DIRS) {
+        const r = R + 20;
+        ctx.fillText(lbl, cx + r * Math.sin(az * Math.PI/180), cy - r * Math.cos(az * Math.PI/180));
+    }
+
+    // Satellites
+    skyPlotSats = [];
+    const mask = elevMask();
+    for (const sat of satellites) {
+        if (!enabledConst[sat.constellation]) continue;
+        const { elev, az } = azelFromEcef(receiver.ecef, sat.x, sat.y, sat.z);
+        if (elev < mask) continue;
+        const r  = R * (90 - elev) / 90;
+        const sx = cx + r * Math.sin(az * Math.PI / 180);
+        const sy = cy - r * Math.cos(az * Math.PI / 180);
+        const col = satColor(sat.constellation, sat.healthy);
+        const num = sat.label.replace(/^[A-Za-z]+/, '');
+
+        ctx.beginPath();
+        ctx.arc(sx, sy, 15, 0, Math.PI * 2);
+        ctx.fillStyle = col;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.fillStyle = '#000';
+        ctx.font = 'bold 10px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(num, sx, sy);
+
+        skyPlotSats.push({ sat, sx, sy });
+    }
+}
+
+window.addEventListener('resize', () => {
+    if (view2D && lastSatellites.length) drawSkyPlot(lastSatellites);
+});
 
 fetchLive();
 setInterval(fetchLive, 5000);

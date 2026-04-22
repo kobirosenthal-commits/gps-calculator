@@ -67,13 +67,19 @@
         .btn-geo   { background: #1a6a3a; color: #e0f0ff; }
         .btn-clear { background: #4a1a1a; color: #ffaaaa; }
         #recv-status { margin-top: 8px; font-size: 0.8em; color: #5599cc; min-height: 1.2em; }
+        #btn-2d { background: #1a1a4a; color: #8888ff; border: 1px solid #3a3a8a; border-radius: 4px; padding: 6px 0; width: 100%; cursor: pointer; font-size: 0.8em; font-weight: 600; margin-top: 8px; transition: all 0.2s; }
+        #btn-2d:hover:not(:disabled) { background: #2a2a6a; }
+        #btn-2d.active { background: #3a3a9a; color: #ccccff; border-color: #8888ff; }
+        #btn-2d:disabled { opacity: 0.3; cursor: not-allowed; }
+        #sky-canvas { display: none; position: absolute; inset: 0; z-index: 5; }
 
         /* ── Satellite panel ── */
-        #sat-panel { top: 60px; right: 20px; bottom: 20px; width: 280px; overflow-y: auto; font-size: 0.82em; }
-        #sat-panel h3 { padding: 10px 14px; color: #7ecfff; border-bottom: 1px solid #1a3a5c; letter-spacing: 1px; font-size: 0.95em; position: sticky; top: 0; background: rgba(0,0,20,0.97); }
-        #panel-sub { padding: 4px 14px 6px; font-size: 0.78em; color: #5599cc; border-bottom: 1px solid #1a3a5c; background: rgba(0,0,20,0.97); position: sticky; top: 37px; line-height: 1.7; }
+        #sat-panel { top: 60px; right: 20px; bottom: 20px; width: 280px; font-size: 0.82em; display: flex; flex-direction: column; overflow: hidden; }
+        #sat-panel h3 { padding: 10px 14px; color: #7ecfff; border-bottom: 1px solid #1a3a5c; letter-spacing: 1px; font-size: 0.95em; flex-shrink: 0; }
+        #panel-sub { padding: 4px 14px 6px; font-size: 0.78em; color: #5599cc; border-bottom: 1px solid #1a3a5c; line-height: 1.7; flex-shrink: 0; }
         #panel-sub .sig-sum { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
-        #col-header { padding: 5px 14px; border-bottom: 1px solid #1a3a5c; font-size: 0.75em; color: #4477aa; position: sticky; top: 57px; background: rgba(0,0,15,0.97); display: grid; }
+        #col-header { padding: 5px 14px; border-bottom: 1px solid #1a3a5c; font-size: 0.75em; color: #4477aa; display: grid; flex-shrink: 0; }
+        #sat-list { overflow-y: auto; flex: 1; min-height: 0; }
         #col-header.no-recv { grid-template-columns: 14px 40px 1fr; }
         #col-header.recv    { grid-template-columns: 14px 40px 52px 42px; }
         .sat-row { padding: 5px 14px; border-bottom: 1px solid rgba(255,255,255,0.04); align-items: start; cursor: pointer; transition: background 0.15s; display: grid; gap: 2px 4px; }
@@ -130,6 +136,7 @@
 
 <div id="loading"><div class="spinner"></div><p>LOADING LIVE DATA...</p></div>
 <div id="canvas-container"></div>
+<canvas id="sky-canvas"></canvas>
 
 <div id="topbar">
     <h1>🛰️ GPS / GLONASS / BeiDou LIVE SKY VIEW</h1>
@@ -172,6 +179,7 @@
         <button class="btn btn-clear" onclick="clearReceiver()">✕ Clear</button>
     </div>
     <div id="recv-status"></div>
+    <button id="btn-2d" disabled onclick="toggle2D()">⊙ 2D Sky Plot</button>
 </div>
 
 <!-- Satellite list -->
@@ -437,6 +445,121 @@ function pushTrail(trail, pos) {
     trail.line.geometry.setDrawRange(0, n);
 }
 
+// ── 2D Sky Plot ───────────────────────────────────────────────────────
+let view2D = false;
+
+function toggle2D() {
+    if (!receiver) return;
+    view2D = !view2D;
+    const btn = document.getElementById('btn-2d');
+    btn.classList.toggle('active', view2D);
+    btn.textContent = view2D ? '🌐 3D Globe' : '⊙ 2D Sky Plot';
+    document.getElementById('canvas-container').style.display = view2D ? 'none' : '';
+    document.getElementById('sky-canvas').style.display = view2D ? 'block' : 'none';
+    if (view2D && lastSatellites.length) drawSkyPlot(lastSatellites);
+}
+
+function azelFromEcef(recv, satX, satY, satZ) {
+    const dx = satX - recv.x, dy = satY - recv.y, dz = satZ - recv.z;
+    const range = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    const ux = dx/range, uy = dy/range, uz = dz/range;
+    const lon  = Math.atan2(recv.y, recv.x);
+    const p    = Math.sqrt(recv.x*recv.x + recv.y*recv.y);
+    const lat  = Math.atan2(recv.z, p * (1 - 0.00669437999014));
+    const slat = Math.sin(lat), clat = Math.cos(lat);
+    const slon = Math.sin(lon), clon = Math.cos(lon);
+    const n =  -slat*clon*ux - slat*slon*uy + clat*uz;
+    const e =  -slon*ux      + clon*uy;
+    const u =   clat*clon*ux + clat*slon*uy + slat*uz;
+    return {
+        range: range / 1000,
+        elev:  Math.asin(Math.max(-1, Math.min(1, u))) * 180 / Math.PI,
+        az:    (Math.atan2(e, n) * 180 / Math.PI + 360) % 360,
+    };
+}
+
+function drawSkyPlot(satellites) {
+    const canvas = document.getElementById('sky-canvas');
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width  = window.innerWidth  * dpr;
+    canvas.height = window.innerHeight * dpr;
+    canvas.style.width  = window.innerWidth  + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    const W = window.innerWidth, H = window.innerHeight;
+    // leave room for the side panels
+    const cx = (W - 300) / 2 + 280;
+    const cy = H / 2;
+    const R  = Math.min(W - 580, H - 100) * 0.46;
+
+    ctx.fillStyle = '#000008';
+    ctx.fillRect(0, 0, W, H);
+
+    // Elevation rings at 0°, 30°, 60°, 90°
+    for (const elDeg of [0, 30, 60]) {
+        const r = R * (90 - elDeg) / 90;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(80,130,220,0.3)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = '#3a5a88';
+        ctx.font = '11px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(elDeg + '°', cx + r + 4, cy);
+    }
+
+    // Azimuth spokes every 45°
+    ctx.strokeStyle = 'rgba(80,130,220,0.18)';
+    for (let a = 0; a < 360; a += 45) {
+        const rad = a * Math.PI / 180;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + R * Math.sin(rad), cy - R * Math.cos(rad));
+        ctx.stroke();
+    }
+
+    // Cardinal direction labels
+    const DIRS = [['N',0],['NE',45],['E',90],['SE',135],['S',180],['SW',225],['W',270],['NW',315]];
+    ctx.fillStyle = '#7ecfff';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const [lbl, az] of DIRS) {
+        const r = R + 20;
+        ctx.fillText(lbl, cx + r * Math.sin(az * Math.PI/180), cy - r * Math.cos(az * Math.PI/180));
+    }
+
+    // Satellites
+    const mask = elevMask();
+    for (const sat of satellites) {
+        if (!enabledConst[sat.constellation]) continue;
+        const { elev, az } = azelFromEcef(receiver.ecef, sat.x, sat.y, sat.z);
+        if (elev < mask) continue;
+        const r  = R * (90 - elev) / 90;
+        const sx = cx + r * Math.sin(az * Math.PI / 180);
+        const sy = cy - r * Math.cos(az * Math.PI / 180);
+        const col = satColor(sat.constellation, sat.healthy);
+        const num = sat.label.replace(/^[A-Za-z]+/, '');
+
+        ctx.beginPath();
+        ctx.arc(sx, sy, 15, 0, Math.PI * 2);
+        ctx.fillStyle = col;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.fillStyle = '#000';
+        ctx.font = 'bold 10px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(num, sx, sy);
+    }
+}
+
 // ── Receiver & links ──────────────────────────────────────────────────
 let receiver = null, recvMarker = null;
 const links = {};
@@ -505,6 +628,7 @@ function setReceiver() {
     placeRecvMarker(ecef);
     faceReceiver(ecef);
     document.getElementById('recv-status').textContent = lat.toFixed(4) + '°, ' + lon.toFixed(4) + '°';
+    document.getElementById('btn-2d').disabled = false;
     if (lastSatellites.length) { refreshLinks(lastSatellites); updatePanel(lastSatellites); }
 }
 
@@ -525,6 +649,15 @@ function clearReceiver() {
     if (recvMarker) { scene.remove(recvMarker); recvMarker = null; }
     for (const k of Object.keys(links)) { scene.remove(links[k].line); scene.remove(links[k].sprite); delete links[k]; }
     document.getElementById('recv-status').textContent = '';
+    document.getElementById('btn-2d').disabled = true;
+    if (view2D) {
+        view2D = false;
+        const btn = document.getElementById('btn-2d');
+        btn.classList.remove('active');
+        btn.textContent = '⊙ 2D Sky Plot';
+        document.getElementById('canvas-container').style.display = '';
+        document.getElementById('sky-canvas').style.display = 'none';
+    }
     updatePanel(lastSatellites);
 }
 
@@ -624,6 +757,7 @@ function updateSatellites(satellites) {
     }
     refreshLinks(satellites);
     updatePanel(satellites);
+    if (view2D) drawSkyPlot(satellites);
 }
 
 // ── Raycasting ────────────────────────────────────────────────────────
@@ -739,6 +873,7 @@ window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    if (view2D && lastSatellites.length) drawSkyPlot(lastSatellites);
 });
 
 fetchLive();
