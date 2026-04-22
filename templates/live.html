@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPS / GLONASS Live Sky View</title>
+    <title>GPS / GLONASS / BeiDou Live Sky View</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #000; color: #e0e0ff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow: hidden; height: 100vh; }
@@ -84,6 +84,7 @@
         .dot  { width: 7px; height: 7px; border-radius: 50%; margin-top: 3px; }
         .dot-ok   { background: #00ff88; }
         .dot-glo  { background: #00ddff; }
+        .dot-bei  { background: #ffcc00; }
         .dot-fail { background: #ff4444; }
 
         #tooltip {
@@ -110,7 +111,7 @@
 <div id="canvas-container"></div>
 
 <div id="topbar">
-    <h1>🛰️ GPS / GLONASS LIVE SKY VIEW</h1>
+    <h1>🛰️ GPS / GLONASS / BeiDou LIVE SKY VIEW</h1>
     <a href="/">← Calculator</a>
 </div>
 
@@ -119,6 +120,7 @@
     <div><span class="lbl">ALMANAC  </span><span class="val" id="st-almanac">—</span></div>
     <div><span class="lbl">GPS      </span><span class="val" id="st-gps">—</span></div>
     <div><span class="lbl">GLONASS  </span><span class="val" id="st-glo">—</span></div>
+    <div><span class="lbl">BEIDOU   </span><span class="val" id="st-bei">—</span></div>
     <div><span class="lbl">UPDATE   </span><span class="val">every 5s</span></div>
 </div>
 
@@ -243,12 +245,24 @@ const ZOOM_REF  = 70;
 const PRN_BASE  = [3.2, 1.2];
 const LINK_BASE = [7.0, 2.3];
 
-function makePrnSprite(label, healthy, isGlonass) {
+function satColor(constellation, healthy) {
+    if (constellation === 'GLONASS') return '#00ddff';
+    if (constellation === 'BEIDOU')  return '#ffcc00';
+    return healthy ? '#00ff88' : '#ff5555';
+}
+
+function satMat(constellation, healthy) {
+    if (constellation === 'GLONASS') return MAT_GLO;
+    if (constellation === 'BEIDOU')  return MAT_BEI;
+    return healthy ? MAT_OK : MAT_FAIL;
+}
+
+function makePrnSprite(label, healthy, constellation) {
     const c = document.createElement('canvas');
     c.width = 160; c.height = 60;
     const ctx = c.getContext('2d');
     ctx.font = 'bold 46px monospace';
-    ctx.fillStyle = isGlonass ? '#00ddff' : (healthy ? '#00ff88' : '#ff5555');
+    ctx.fillStyle = satColor(constellation, healthy);
     ctx.fillText(label, 4, 50);
     const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false }));
     spr.scale.set(PRN_BASE[0], PRN_BASE[1], 1);
@@ -277,15 +291,18 @@ const SAT_GEO  = new THREE.SphereGeometry(0.14, 8, 8);
 const MAT_OK   = new THREE.MeshPhongMaterial({ color: 0x00ff88, emissive: 0x006633 });
 const MAT_FAIL = new THREE.MeshPhongMaterial({ color: 0xff4444, emissive: 0x661111 });
 const MAT_GLO  = new THREE.MeshPhongMaterial({ color: 0x00ddff, emissive: 0x005566 });
+const MAT_BEI  = new THREE.MeshPhongMaterial({ color: 0xffcc00, emissive: 0x664400 });
 const TRAIL_MAX = 80;
 const sats = {}, satData = {};
 
-function makeTrail(healthy, isGlonass) {
+function makeTrail(healthy, constellation) {
     const buf = new Float32Array(TRAIL_MAX * 3);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(buf, 3));
     geo.setDrawRange(0, 0);
-    const color = isGlonass ? 0x0099cc : (healthy ? 0x00cc66 : 0xcc3333);
+    const color = constellation === 'GLONASS' ? 0x0099cc
+                : constellation === 'BEIDOU'  ? 0xcc9900
+                : (healthy ? 0x00cc66 : 0xcc3333);
     const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.45 }));
     return { line, pts: [] };
 }
@@ -405,9 +422,8 @@ function updatePanel(satsArr) {
             if (a.constellation !== b.constellation) return a.constellation < b.constellation ? -1 : 1;
             return a.prn - b.prn;
         }).map(s => {
-            const isGlo = s.constellation === 'GLONASS';
-            const dotCls = isGlo ? 'dot-glo' : (s.healthy ? 'dot-ok' : 'dot-fail');
-            const prnColor = isGlo ? '#00ddff' : '#7ecfff';
+            const dotCls   = s.constellation === 'GLONASS' ? 'dot-glo' : s.constellation === 'BEIDOU' ? 'dot-bei' : (s.healthy ? 'dot-ok' : 'dot-fail');
+            const prnColor = satColor(s.constellation, s.healthy);
             return `<div class="sat-row no-recv" onmouseenter="hlSat('${s.label}')" onmouseleave="clearHl()">
                 <div><div class="dot ${dotCls}"></div></div>
                 <div class="prn" style="color:${prnColor}">${s.label}</div>
@@ -425,9 +441,8 @@ function updatePanel(satsArr) {
         hdr.innerHTML   = '<span></span><span>ID</span><span>Range</span><span>Elev</span>';
         lst.innerHTML   = vis.map(s => {
             const c = s.elev > 45 ? '#00ff88' : s.elev > 20 ? '#ffdd00' : '#ff8800';
-            const isGlo = s.constellation === 'GLONASS';
-            const dotCls = isGlo ? 'dot-glo' : (s.healthy ? 'dot-ok' : 'dot-fail');
-            const prnColor = isGlo ? '#00ddff' : '#7ecfff';
+            const dotCls   = s.constellation === 'GLONASS' ? 'dot-glo' : s.constellation === 'BEIDOU' ? 'dot-bei' : (s.healthy ? 'dot-ok' : 'dot-fail');
+            const prnColor = satColor(s.constellation, s.healthy);
             return `<div class="sat-row recv" onmouseenter="hlSat('${s.label}')" onmouseleave="clearHl()">
                 <div><div class="dot ${dotCls}"></div></div>
                 <div class="prn" style="color:${prnColor}">${s.label}</div>
@@ -446,20 +461,19 @@ function updateSatellites(satellites) {
         seen.add(sat.label);
         satData[sat.label] = sat;
         const pos = e2t(sat.x, sat.y, sat.z);
-        const isGlo = sat.constellation === 'GLONASS';
         if (!sats[sat.label]) {
-            const sphere = new THREE.Mesh(SAT_GEO, isGlo ? MAT_GLO : (sat.healthy ? MAT_OK : MAT_FAIL));
+            const sphere = new THREE.Mesh(SAT_GEO, satMat(sat.constellation, sat.healthy));
             sphere.userData.label = sat.label;
-            const label = makePrnSprite(sat.label, sat.healthy, isGlo);
+            const label = makePrnSprite(sat.label, sat.healthy, sat.constellation);
             const group = new THREE.Group();
             group.add(sphere); group.add(label);
             scene.add(group);
-            const trail = makeTrail(sat.healthy, isGlo);
+            const trail = makeTrail(sat.healthy, sat.constellation);
             scene.add(trail.line);
             sats[sat.label] = { group, sphere, label, trail };
         }
         sats[sat.label].group.position.copy(pos);
-        sats[sat.label].sphere.material = isGlo ? MAT_GLO : (sat.healthy ? MAT_OK : MAT_FAIL);
+        sats[sat.label].sphere.material = satMat(sat.constellation, sat.healthy);
         pushTrail(sats[sat.label].trail, pos);
     }
     for (const key of Object.keys(sats)) {
@@ -485,8 +499,7 @@ function checkHover(cx, cy) {
     if (hits.length) {
         const lbl = hits[0].object.userData.label;
         const d   = satData[lbl];
-        const isGlo = d.constellation === 'GLONASS';
-        const prnColor = isGlo ? '#00ddff' : '#7ecfff';
+        const prnColor = satColor(d.constellation, d.healthy);
         let extra = '';
         if (receiver) {
             const { range, elev } = rangeElev(receiver.ecef, d.x, d.y, d.z);
@@ -539,10 +552,12 @@ async function fetchLive() {
         if (!res.ok) { console.error('API error:', data.error); return; }
         const gpsSats = data.satellites.filter(s => s.constellation === 'GPS');
         const gloSats = data.satellites.filter(s => s.constellation === 'GLONASS');
+        const beiSats = data.satellites.filter(s => s.constellation === 'BEIDOU');
         document.getElementById('st-time').textContent    = data.time;
         document.getElementById('st-almanac').textContent = data.almanac_date || '—';
         document.getElementById('st-gps').textContent     = gpsSats.length;
         document.getElementById('st-glo').textContent     = gloSats.length;
+        document.getElementById('st-bei').textContent     = beiSats.length;
         updateSatellites(data.satellites);
     } catch (e) {
         console.error('fetchLive error:', e);

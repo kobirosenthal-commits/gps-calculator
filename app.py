@@ -8,6 +8,24 @@ app = Flask(__name__)
 
 almanac_data = {'satellites': [], 'date': None, 'week': None, 'toa': None}
 glo_data = {'tles': [], 'fetched': None}
+bei_data = {'tles': [], 'fetched': None}
+
+
+def _load_tle_constellation(group, label_prefix):
+    """Fetch, parse and label TLEs for a constellation. Returns list or None."""
+    try:
+        text = fetch_tle_group(group)
+        if not text:
+            return None
+        tles = parse_tles(text)
+        if not tles:
+            return None
+        for i, tle in enumerate(tles):
+            tle['id'] = i + 1
+            tle['label'] = f"{label_prefix}{i + 1:02d}"
+        return tles
+    except Exception:
+        return None
 
 
 @app.route('/')
@@ -17,7 +35,7 @@ def index():
 
 @app.route('/api/load-almanac', methods=['POST'])
 def load_almanac():
-    global almanac_data, glo_data
+    global almanac_data, glo_data, bei_data
 
     payload = request.json
     if payload is None:
@@ -25,26 +43,23 @@ def load_almanac():
 
     constellation = payload.get('constellation', 'GPS').upper()
 
-    if constellation == 'GLONASS':
-        try:
-            text = fetch_tle_group('glo-ops')
-            if not text:
-                return jsonify({'error': 'Could not fetch GLONASS TLEs from Celestrak'}), 503
-            tles = parse_tles(text)
-            if not tles:
-                return jsonify({'error': 'Could not parse GLONASS TLEs'}), 400
-            for i, tle in enumerate(tles):
-                tle['id'] = i + 1
-                tle['label'] = f"R{i + 1:02d}"
-            glo_data = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
-            return jsonify({
-                'success': True,
-                'count': len(tles),
-                'constellation': 'GLONASS',
-                'source': 'Celestrak (current TLEs)',
-            })
-        except Exception as e:
-            return jsonify({'error': f'Celestrak fetch timed out: {str(e)}'}), 503
+    if constellation in ('GLONASS', 'BEIDOU'):
+        group  = 'glo-ops' if constellation == 'GLONASS' else 'beidou'
+        prefix = 'R'       if constellation == 'GLONASS' else 'C'
+        tles = _load_tle_constellation(group, prefix)
+        if not tles:
+            return jsonify({'error': f'Could not fetch {constellation} TLEs from Celestrak'}), 503
+        fetched = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if constellation == 'GLONASS':
+            glo_data = {'tles': tles, 'fetched': fetched}
+        else:
+            bei_data = {'tles': tles, 'fetched': fetched}
+        return jsonify({
+            'success': True,
+            'count': len(tles),
+            'constellation': constellation,
+            'source': 'Celestrak (current TLEs)',
+        })
 
     # GPS path
     date_str = payload.get('date', 'today')
@@ -60,12 +75,9 @@ def load_almanac():
     if dt > datetime.now(timezone.utc):
         return jsonify({'error': 'Cannot load future dates'}), 400
 
-    year = dt.year
-    doy = dt.timetuple().tm_yday
-
-    text = fetch_almanac(year, doy)
+    text = fetch_almanac(dt.year, dt.timetuple().tm_yday)
     if not text:
-        return jsonify({'error': f'Almanac not found for {year} day {doy}'}), 404
+        return jsonify({'error': f'Almanac not found for {dt.year} day {dt.timetuple().tm_yday}'}), 404
 
     satellites = parse_yuma(text)
     if not satellites:
@@ -94,11 +106,14 @@ def get_satellites():
     if constellation == 'GLONASS':
         if not glo_data['tles']:
             return jsonify({'error': 'No GLONASS TLEs loaded'}), 400
-        result = [
-            {'id': tle['id'], 'label': tle['label'], 'name': tle['name'], 'health': 'Healthy'}
-            for tle in glo_data['tles']
-        ]
+        result = [{'id': t['id'], 'label': t['label'], 'name': t['name'], 'health': 'Healthy'} for t in glo_data['tles']]
         return jsonify({'satellites': result, 'date': glo_data['fetched'], 'constellation': 'GLONASS'})
+
+    if constellation == 'BEIDOU':
+        if not bei_data['tles']:
+            return jsonify({'error': 'No BeiDou TLEs loaded'}), 400
+        result = [{'id': t['id'], 'label': t['label'], 'name': t['name'], 'health': 'Healthy'} for t in bei_data['tles']]
+        return jsonify({'satellites': result, 'date': bei_data['fetched'], 'constellation': 'BEIDOU'})
 
     if not almanac_data['satellites']:
         return jsonify({'error': 'No almanac loaded'}), 400
@@ -114,7 +129,6 @@ def get_satellites():
         }
         for sat in almanac_data['satellites']
     ]
-
     return jsonify({'satellites': result, 'date': almanac_data['date'], 'constellation': 'GPS'})
 
 
@@ -125,9 +139,9 @@ def live():
 
 @app.route('/api/live-positions', methods=['GET'])
 def live_positions():
-    global almanac_data, glo_data
+    global almanac_data, glo_data, bei_data
 
-    # Auto-load GPS almanac if needed
+    # Auto-load GPS almanac
     if not almanac_data['satellites']:
         dt = datetime.now(timezone.utc) - timedelta(days=2)
         for offset in range(5):
@@ -144,21 +158,19 @@ def live_positions():
                     }
                     break
 
-    # Auto-load GLONASS TLEs if needed (with timeout protection)
+    # Auto-load GLONASS TLEs
     if not glo_data['tles']:
-        try:
-            text = fetch_tle_group('glo-ops')
-            if text:
-                tles = parse_tles(text)
-                if tles:
-                    for i, tle in enumerate(tles):
-                        tle['id'] = i + 1
-                        tle['label'] = f"R{i + 1:02d}"
-                    glo_data = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
-        except Exception:
-            pass
+        tles = _load_tle_constellation('glo-ops', 'R')
+        if tles:
+            glo_data = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
 
-    if not almanac_data['satellites'] and not glo_data['tles']:
+    # Auto-load BeiDou TLEs
+    if not bei_data['tles']:
+        tles = _load_tle_constellation('beidou', 'C')
+        if tles:
+            bei_data = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
+
+    if not almanac_data['satellites'] and not glo_data['tles'] and not bei_data['tles']:
         return jsonify({'error': 'Could not load satellite data'}), 503
 
     now = datetime.now(timezone.utc)
@@ -170,40 +182,29 @@ def live_positions():
             pos = propagate(sat, gps_sec)
             geo = geodetic(pos['x'], pos['y'], pos['z'])
             positions.append({
-                'prn': sat['id'],
-                'label': f"G{sat['id']:02d}",
-                'constellation': 'GPS',
+                'prn': sat['id'], 'label': f"G{sat['id']:02d}", 'constellation': 'GPS',
                 'healthy': sat['health'] == 0,
-                'x': pos['x'],
-                'y': pos['y'],
-                'z': pos['z'],
-                'lat': round(geo['lat'], 4),
-                'lon': round(geo['lon'], 4),
-                'alt_km': round(geo['alt'] / 1000, 1),
+                'x': pos['x'], 'y': pos['y'], 'z': pos['z'],
+                'lat': round(geo['lat'], 4), 'lon': round(geo['lon'], 4), 'alt_km': round(geo['alt'] / 1000, 1),
             })
         except (TypeError, ValueError, ZeroDivisionError):
             pass
 
-    for tle in glo_data['tles']:
-        try:
-            pos = propagate_tle(tle, now)
-            if not pos:
-                continue
-            geo = geodetic(pos['x'], pos['y'], pos['z'])
-            positions.append({
-                'prn': tle['id'],
-                'label': tle['label'],
-                'constellation': 'GLONASS',
-                'healthy': True,
-                'x': pos['x'],
-                'y': pos['y'],
-                'z': pos['z'],
-                'lat': round(geo['lat'], 4),
-                'lon': round(geo['lon'], 4),
-                'alt_km': round(geo['alt'] / 1000, 1),
-            })
-        except Exception:
-            pass
+    for constellation, cache in (('GLONASS', glo_data), ('BEIDOU', bei_data)):
+        for tle in cache['tles']:
+            try:
+                pos = propagate_tle(tle, now)
+                if not pos:
+                    continue
+                geo = geodetic(pos['x'], pos['y'], pos['z'])
+                positions.append({
+                    'prn': tle['id'], 'label': tle['label'], 'constellation': constellation,
+                    'healthy': True,
+                    'x': pos['x'], 'y': pos['y'], 'z': pos['z'],
+                    'lat': round(geo['lat'], 4), 'lon': round(geo['lon'], 4), 'alt_km': round(geo['alt'] / 1000, 1),
+                })
+            except Exception:
+                pass
 
     return jsonify({
         'time': now.strftime("%Y-%m-%d %H:%M:%S UTC"),
@@ -220,18 +221,19 @@ def calculate_position():
 
     constellation = payload.get('constellation', 'GPS').upper()
 
-    if constellation == 'GLONASS':
-        if not glo_data['tles']:
-            return jsonify({'error': 'No GLONASS TLEs loaded'}), 400
+    if constellation in ('GLONASS', 'BEIDOU'):
+        cache = glo_data if constellation == 'GLONASS' else bei_data
+        if not cache['tles']:
+            return jsonify({'error': f'No {constellation} TLEs loaded'}), 400
 
         try:
             sat_id = int(payload.get('prn', 0))
         except (ValueError, TypeError):
             return jsonify({'error': 'Invalid satellite ID'}), 400
 
-        tle = next((t for t in glo_data['tles'] if t['id'] == sat_id), None)
+        tle = next((t for t in cache['tles'] if t['id'] == sat_id), None)
         if not tle:
-            return jsonify({'error': f'GLONASS satellite {sat_id} not found'}), 404
+            return jsonify({'error': f'{constellation} satellite {sat_id} not found'}), 404
 
         time_str = payload.get('time', 'now')
         if time_str.lower() == 'now':
@@ -248,21 +250,10 @@ def calculate_position():
 
         geo = geodetic(pos['x'], pos['y'], pos['z'])
         return jsonify({
-            'prn': sat_id,
-            'label': tle['label'],
-            'constellation': 'GLONASS',
+            'prn': sat_id, 'label': tle['label'], 'constellation': constellation,
             'time': dt.strftime("%Y-%m-%d %H:%M:%S"),
-            'ecef': {
-                'x': f"{pos['x']:,.0f}",
-                'y': f"{pos['y']:,.0f}",
-                'z': f"{pos['z']:,.0f}",
-                'r': f"{pos['r'] / 1000:,.1f}",
-            },
-            'geodetic': {
-                'latitude': f"{geo['lat']:.4f}",
-                'longitude': f"{geo['lon']:.4f}",
-                'altitude': f"{geo['alt'] / 1000:.1f}",
-            },
+            'ecef': {'x': f"{pos['x']:,.0f}", 'y': f"{pos['y']:,.0f}", 'z': f"{pos['z']:,.0f}", 'r': f"{pos['r'] / 1000:,.1f}"},
+            'geodetic': {'latitude': f"{geo['lat']:.4f}", 'longitude': f"{geo['lon']:.4f}", 'altitude': f"{geo['alt'] / 1000:.1f}"},
         })
 
     # GPS path
@@ -275,7 +266,6 @@ def calculate_position():
         return jsonify({'error': 'Invalid PRN'}), 400
 
     time_str = payload.get('time', 'now')
-
     satellite = next((s for s in almanac_data['satellites'] if s['id'] == prn), None)
     if not satellite:
         return jsonify({'error': f'PRN {prn} not found'}), 404
@@ -293,19 +283,8 @@ def calculate_position():
     geo = geodetic(pos['x'], pos['y'], pos['z'])
 
     return jsonify({
-        'prn': prn,
-        'label': f"G{prn:02d}",
-        'constellation': 'GPS',
+        'prn': prn, 'label': f"G{prn:02d}", 'constellation': 'GPS',
         'time': dt.strftime("%Y-%m-%d %H:%M:%S"),
-        'ecef': {
-            'x': f"{pos['x']:,.0f}",
-            'y': f"{pos['y']:,.0f}",
-            'z': f"{pos['z']:,.0f}",
-            'r': f"{pos['r'] / 1000:,.1f}",
-        },
-        'geodetic': {
-            'latitude': f"{geo['lat']:.4f}",
-            'longitude': f"{geo['lon']:.4f}",
-            'altitude': f"{geo['alt'] / 1000:.1f}",
-        },
+        'ecef': {'x': f"{pos['x']:,.0f}", 'y': f"{pos['y']:,.0f}", 'z': f"{pos['z']:,.0f}", 'r': f"{pos['r'] / 1000:,.1f}"},
+        'geodetic': {'latitude': f"{geo['lat']:.4f}", 'longitude': f"{geo['lon']:.4f}", 'altitude': f"{geo['alt'] / 1000:.1f}"},
     })

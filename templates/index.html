@@ -300,6 +300,7 @@
                 <div class="const-toggle">
                     <button id="tab-gps" class="tab-btn tab-active" onclick="selectConstellation('GPS')">GPS</button>
                     <button id="tab-glo" class="tab-btn" onclick="selectConstellation('GLONASS')">GLONASS</button>
+                    <button id="tab-bei" class="tab-btn" onclick="selectConstellation('BEIDOU')">BeiDou</button>
                 </div>
 
                 <div class="form-group" id="date-group">
@@ -373,19 +374,25 @@
     <script>
         let currentConstellation = 'GPS';
 
+        const CONST_LABELS = { GPS: 'Load GPS Almanac', GLONASS: 'Load GLONASS TLEs', BEIDOU: 'Load BeiDou TLEs' };
+        const CONST_PRN   = { GPS: 'PRN Number (1–32)', GLONASS: 'Satellite # (1–30)', BEIDOU: 'Satellite # (1–60)' };
+        const CONST_MAX   = { GPS: 32, GLONASS: 30, BEIDOU: 60 };
+
         function selectConstellation(c) {
             currentConstellation = c;
-            document.getElementById('tab-gps').className = 'tab-btn' + (c === 'GPS' ? ' tab-active' : '');
-            document.getElementById('tab-glo').className = 'tab-btn' + (c === 'GLONASS' ? ' tab-active' : '');
+            ['GPS','GLONASS','BEIDOU'].forEach(x => {
+                document.getElementById('tab-' + x.toLowerCase().replace('beidou','bei')).className =
+                    'tab-btn' + (c === x ? ' tab-active' : '');
+            });
             document.getElementById('date-group').style.display = c === 'GPS' ? '' : 'none';
-            document.getElementById('glo-note').style.display = c === 'GLONASS' ? '' : 'none';
-            document.getElementById('loadBtn').textContent = c === 'GPS' ? 'Load GPS Almanac' : 'Load GLONASS TLEs';
-            document.getElementById('prn-label').textContent = c === 'GPS' ? 'PRN Number (1–32)' : 'Satellite # (1–30)';
-            document.getElementById('prnInput').max = c === 'GPS' ? 32 : 30;
+            document.getElementById('glo-note').style.display   = c !== 'GPS' ? '' : 'none';
+            document.getElementById('loadBtn').textContent       = CONST_LABELS[c];
+            document.getElementById('prn-label').textContent     = CONST_PRN[c];
+            document.getElementById('prnInput').max              = CONST_MAX[c];
             document.getElementById('almanacInfo').style.display = 'none';
             document.getElementById('satellitesContainer').style.display = 'none';
             document.getElementById('noSatellites').style.display = 'block';
-            document.getElementById('noSatellites').textContent = 'Load data to see satellites';
+            document.getElementById('noSatellites').textContent  = 'Load data to see satellites';
         }
 
         function hideAlert(id) {
