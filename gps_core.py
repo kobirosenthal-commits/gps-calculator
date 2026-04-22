@@ -3,8 +3,11 @@ from datetime import datetime, timezone
 import requests
 import requests.packages.urllib3
 requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
+import logging
 import math
 import re
+
+log = logging.getLogger(__name__)
 
 MU = 3.986005e14
 OMEGA_E = 7.2921151467e-5
@@ -127,21 +130,32 @@ def gps_time_from_datetime(dt):
 def fetch_tle_group(group):
     urls = [
         f"https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=tle",
+        f"https://www.celestrak.com/NORAD/elements/gp.php?GROUP={group}&FORMAT=tle",
+        f"https://celestrak.com/NORAD/elements/{group}.txt",
         f"https://www.celestrak.com/NORAD/elements/{group}.txt",
-        f"https://celestrak.org/pub/TLE/groups/{group}.txt",
     ]
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/plain,text/*,*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+    }
     for url in urls:
         for verify in (True, False):
             try:
-                r = requests.get(url, timeout=15, headers=headers, verify=verify)
-                r.raise_for_status()
-                text = r.text
-                if text and '1 ' in text and not text.lstrip().lower().startswith('no gp'):
-                    return text
-                break
-            except Exception:
+                r = requests.get(url, timeout=20, headers=headers, verify=verify, allow_redirects=True)
+            except Exception as e:
+                log.warning(f"fetch_tle_group({group}) {url} verify={verify}: {type(e).__name__}: {e}")
                 continue
+            if r.status_code != 200:
+                snippet = (r.text or '')[:120].replace('\n', ' ')
+                log.warning(f"fetch_tle_group({group}) {url} verify={verify}: HTTP {r.status_code} body={snippet!r}")
+                continue
+            text = r.text or ''
+            if '1 ' in text and not text.lstrip().lower().startswith('no gp'):
+                log.info(f"fetch_tle_group({group}) OK via {url} verify={verify} ({len(text)} bytes)")
+                return text
+            snippet = text[:120].replace('\n', ' ')
+            log.warning(f"fetch_tle_group({group}) {url} verify={verify}: unexpected body {snippet!r}")
     return None
 
 

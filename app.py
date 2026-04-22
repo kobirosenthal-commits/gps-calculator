@@ -2,9 +2,14 @@ from flask import Flask, render_template, request, jsonify
 from datetime import datetime, timedelta, timezone
 from gps_core import (fetch_almanac, parse_yuma, propagate, geodetic, gps_time_from_datetime,
                       fetch_tle_group, parse_tles, propagate_tle)
+import logging
 import math
 import threading
 import time
+
+# Surface INFO-level logs from gps_core (TLE fetch attempts) in gunicorn's stream
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s %(name)s: %(message)s')
+logging.getLogger('gps_core').setLevel(logging.INFO)
 
 app = Flask(__name__)
 
