@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from datetime import datetime, timezone
 import requests
+import requests.packages.urllib3
+requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
 import math
 import re
 

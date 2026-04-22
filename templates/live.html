@@ -288,6 +288,13 @@ function satMat(constellation, healthy) {
     return healthy ? MAT_OK : MAT_FAIL;
 }
 
+function satGhostMat(constellation, healthy) {
+    if (constellation === 'GLONASS') return MAT_GLO_G;
+    if (constellation === 'BEIDOU')  return MAT_BEI_G;
+    if (constellation === 'GALILEO') return MAT_GAL_G;
+    return healthy ? MAT_OK_G : MAT_FAIL_G;
+}
+
 function makePrnSprite(label, healthy, constellation) {
     const c = document.createElement('canvas');
     c.width = 160; c.height = 60;
@@ -396,6 +403,14 @@ const MAT_FAIL = new THREE.MeshPhongMaterial({ color: 0xff4444, emissive: 0x6611
 const MAT_GLO  = new THREE.MeshPhongMaterial({ color: 0x00ddff, emissive: 0x005566 });
 const MAT_BEI  = new THREE.MeshPhongMaterial({ color: 0xffcc00, emissive: 0x664400 });
 const MAT_GAL  = new THREE.MeshPhongMaterial({ color: 0xff9500, emissive: 0x663300 });
+
+// Far-side ghost materials — depthTest off so they bleed through Earth
+const GHOST_OPTS = { transparent: true, opacity: 0.18, depthTest: false, depthWrite: false };
+const MAT_OK_G   = new THREE.MeshPhongMaterial({ color: 0x00ff88, emissive: 0x003322, ...GHOST_OPTS });
+const MAT_FAIL_G = new THREE.MeshPhongMaterial({ color: 0xff4444, emissive: 0x330000, ...GHOST_OPTS });
+const MAT_GLO_G  = new THREE.MeshPhongMaterial({ color: 0x00ddff, emissive: 0x002233, ...GHOST_OPTS });
+const MAT_BEI_G  = new THREE.MeshPhongMaterial({ color: 0xffcc00, emissive: 0x332200, ...GHOST_OPTS });
+const MAT_GAL_G  = new THREE.MeshPhongMaterial({ color: 0xff9500, emissive: 0x331100, ...GHOST_OPTS });
 const TRAIL_MAX = 80;
 const sats = {}, satData = {};
 
@@ -702,7 +717,14 @@ function animate() {
     camera.lookAt(0, 0, 0);
 
     const sf = zoom / ZOOM_REF;
-    for (const obj of Object.values(sats)) {
+    const camNorm = camera.position.clone().normalize();
+    for (const [key, obj] of Object.entries(sats)) {
+        const isFar = obj.group.position.dot(camNorm) < 0;
+        const d = satData[key];
+        obj.sphere.material = isFar ? satGhostMat(d.constellation, d.healthy) : satMat(d.constellation, d.healthy);
+        obj.sphere.renderOrder = isFar ? 0 : 1;
+        obj.label.material.opacity = isFar ? 0.15 : 1.0;
+        obj.label.renderOrder = isFar ? 0 : 2;
         obj.label.scale.set(PRN_BASE[0] * sf, PRN_BASE[1] * sf, 1);
     }
     for (const lnk of Object.values(links)) {
