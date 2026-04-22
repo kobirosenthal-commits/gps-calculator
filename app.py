@@ -26,22 +26,25 @@ def load_almanac():
     constellation = payload.get('constellation', 'GPS').upper()
 
     if constellation == 'GLONASS':
-        text = fetch_tle_group('glo-ops')
-        if not text:
-            return jsonify({'error': 'Could not fetch GLONASS TLEs from Celestrak'}), 503
-        tles = parse_tles(text)
-        if not tles:
-            return jsonify({'error': 'Could not parse GLONASS TLEs'}), 400
-        for i, tle in enumerate(tles):
-            tle['id'] = i + 1
-            tle['label'] = f"R{i + 1:02d}"
-        glo_data = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
-        return jsonify({
-            'success': True,
-            'count': len(tles),
-            'constellation': 'GLONASS',
-            'source': 'Celestrak (current TLEs)',
-        })
+        try:
+            text = fetch_tle_group('glo-ops')
+            if not text:
+                return jsonify({'error': 'Could not fetch GLONASS TLEs from Celestrak'}), 503
+            tles = parse_tles(text)
+            if not tles:
+                return jsonify({'error': 'Could not parse GLONASS TLEs'}), 400
+            for i, tle in enumerate(tles):
+                tle['id'] = i + 1
+                tle['label'] = f"R{i + 1:02d}"
+            glo_data = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
+            return jsonify({
+                'success': True,
+                'count': len(tles),
+                'constellation': 'GLONASS',
+                'source': 'Celestrak (current TLEs)',
+            })
+        except Exception as e:
+            return jsonify({'error': f'Celestrak fetch timed out: {str(e)}'}), 503
 
     # GPS path
     date_str = payload.get('date', 'today')
@@ -141,16 +144,19 @@ def live_positions():
                     }
                     break
 
-    # Auto-load GLONASS TLEs if needed
+    # Auto-load GLONASS TLEs if needed (with timeout protection)
     if not glo_data['tles']:
-        text = fetch_tle_group('glo-ops')
-        if text:
-            tles = parse_tles(text)
-            if tles:
-                for i, tle in enumerate(tles):
-                    tle['id'] = i + 1
-                    tle['label'] = f"R{i + 1:02d}"
-                glo_data = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
+        try:
+            text = fetch_tle_group('glo-ops')
+            if text:
+                tles = parse_tles(text)
+                if tles:
+                    for i, tle in enumerate(tles):
+                        tle['id'] = i + 1
+                        tle['label'] = f"R{i + 1:02d}"
+                    glo_data = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
+        except Exception:
+            pass
 
     if not almanac_data['satellites'] and not glo_data['tles']:
         return jsonify({'error': 'Could not load satellite data'}), 503

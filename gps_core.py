@@ -130,12 +130,12 @@ def fetch_tle_group(group):
     headers = {'User-Agent': 'Mozilla/5.0 (GPS-Calculator)'}
     for url in urls:
         try:
-            r = requests.get(url, timeout=15, headers=headers)
+            r = requests.get(url, timeout=5, headers=headers)
             r.raise_for_status()
             text = r.text
             if text and '1 ' in text and not text.lstrip().lower().startswith('no gp'):
                 return text
-        except requests.RequestException:
+        except Exception:
             continue
     return None
 
