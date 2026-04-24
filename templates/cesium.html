@@ -122,6 +122,7 @@
         #sd-body { padding: 10px 14px; line-height: 1.9; }
         .sd-section { margin-bottom: 14px; }
         .sd-section h4 { color: #5599cc; font-size: 0.78em; letter-spacing: 1.5px; margin-bottom: 5px; border-bottom: 1px solid #1a3a5c; padding-bottom: 3px; }
+        .sd-sub { color: #3a6a9a; font-size: 0.72em; letter-spacing: 1px; text-transform: uppercase; margin: 8px 0 3px; }
         .sd-row { display: flex; justify-content: space-between; gap: 8px; font-size: 0.82em; }
         .sd-lbl { color: #4477aa; flex-shrink: 0; }
         .sd-val { color: #e0f0ff; font-weight: 600; text-align: right; }
@@ -792,6 +793,46 @@ function renderSatDetail(data, sat, rangeKm, elev, az) {
         html += sdRow('Mean anomaly',     a.mean_anomaly_deg.toFixed(4) + '°');
         html += sdRow('Clock bias (af₀)', a.af0.toExponential(3) + ' s');
         html += sdRow('Clock drift (af₁)',a.af1.toExponential(3) + ' s/s');
+        html += '</div>';
+    }
+
+    if (data.ephemeris) {
+        const e = data.ephemeris;
+        const l2Map = {0:'Reserved', 1:'P-code', 2:'C/A-code', 3:'L2C'};
+        html += '<div class="sd-section"><h4>BROADCAST EPHEMERIS (LNAV)</h4>';
+        html += '<div class="sd-sub">Subframe 1 — Clock &amp; Status</div>';
+        html += sdRow('toc (UTC)',       e.toc);
+        html += sdRow('GPS Week',        e.gps_week);
+        html += sdRow('IODC',            e.iodc);
+        html += sdRow('URA index',       e.ura.toFixed(0));
+        html += sdRow('SV Health',       e.health_eph === 0
+            ? '<span style="color:#00ff88">0 — Healthy</span>'
+            : '<span style="color:#ff5555">' + e.health_eph + ' — Unhealthy</span>');
+        html += sdRow('L2 codes',        (l2Map[e.l2_codes] || e.l2_codes));
+        html += sdRow('L2 P flag',       e.l2_p_flag);
+        html += sdRow('TGD',             e.tgd.toExponential(3) + ' s');
+        html += sdRow('af₂',             e.af2.toExponential(3) + ' s/s²');
+        html += '<div class="sd-sub">Subframe 2 — Ephemeris I</div>';
+        html += sdRow('IODE',            e.iode);
+        html += sdRow('ToE',             e.toe.toFixed(0) + ' s');
+        html += sdRow('√A',              e.sqrt_a_eph.toFixed(3) + ' m½');
+        html += sdRow('e',               e.e_eph.toFixed(10));
+        html += sdRow('M₀',              e.m0_deg.toFixed(6) + '°');
+        html += sdRow('Δn',              e.delta_n.toExponential(3) + ' rad/s');
+        html += sdRow('Cus',             e.cus.toExponential(3) + ' rad');
+        html += sdRow('Cuc',             e.cuc.toExponential(3) + ' rad');
+        html += sdRow('Crs',             e.crs.toFixed(4) + ' m');
+        html += sdRow('Fit interval',    e.fit_interval === 0 ? '4 h' : '>4 h');
+        html += '<div class="sd-sub">Subframe 3 — Ephemeris II</div>';
+        html += sdRow('Ω₀',              e.omega0_deg.toFixed(6) + '°');
+        html += sdRow('i₀',              e.i0_deg.toFixed(6) + '°');
+        html += sdRow('ω',               e.omega_deg.toFixed(6) + '°');
+        html += sdRow('dΩ/dt',           e.omega_dot.toExponential(3) + ' rad/s');
+        html += sdRow('IDOT',            e.idot.toExponential(3) + ' rad/s');
+        html += sdRow('Crc',             e.crc.toFixed(4) + ' m');
+        html += sdRow('Cic',             e.cic.toExponential(3) + ' rad');
+        html += sdRow('Cis',             e.cis.toExponential(3) + ' rad');
+        html += sdRow('Source',          'RINEX ' + e.rinex_date);
         html += '</div>';
     }
 

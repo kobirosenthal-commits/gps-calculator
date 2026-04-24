@@ -1,7 +1,8 @@
 from flask import Flask, render_template, request, jsonify
 from datetime import datetime, timedelta, timezone
 from gps_core import (fetch_almanac, parse_yuma, propagate, geodetic, gps_time_from_datetime,
-                      fetch_tle_group, parse_tles, propagate_tle, fetch_glonass_slot_map)
+                      fetch_tle_group, parse_tles, propagate_tle, fetch_glonass_slot_map,
+                      fetch_gps_rinex, parse_rinex2_nav)
 import logging
 import math
 import re
@@ -27,6 +28,7 @@ GSAT_TO_PRN = {
 }
 
 almanac_data = {'satellites': [], 'date': None, 'week': None, 'toa': None}
+rinex_data   = {'ephemeris': {}, 'date': None}
 glo_data = {'tles': [], 'fetched': None}
 bei_data = {'tles': [], 'fetched': None}
 gal_data = {'tles': [], 'fetched': None}
@@ -99,6 +101,27 @@ def _tle_refresh_worker():
 
 
 threading.Thread(target=_tle_refresh_worker, daemon=True).start()
+
+
+def _rinex_refresh_worker():
+    global rinex_data
+    while True:
+        for offset in range(3):
+            dt = datetime.now(timezone.utc) - timedelta(days=offset)
+            try:
+                text = fetch_gps_rinex(dt)
+                if text:
+                    eph = parse_rinex2_nav(text)
+                    if eph:
+                        rinex_data = {'ephemeris': eph, 'date': dt.strftime('%Y-%m-%d')}
+                        app.logger.info(f"RINEX loaded: {len(eph)} PRNs from {dt.strftime('%Y-%m-%d')}")
+                        break
+            except Exception as e:
+                app.logger.warning(f"RINEX refresh error: {e}")
+        time.sleep(6 * 3600)
+
+
+threading.Thread(target=_rinex_refresh_worker, daemon=True).start()
 
 
 @app.errorhandler(500)
@@ -246,7 +269,7 @@ def satellite_detail():
         sat = next((s for s in almanac_data['satellites'] if s['id'] == prn), None)
         if not sat:
             return jsonify({'error': 'Not found'}), 404
-        return jsonify({
+        resp = {
             'label': label, 'constellation': 'GPS',
             'almanac': {
                 'gps_week':          sat['wk'],
@@ -263,7 +286,43 @@ def satellite_detail():
                 'af1':               sat['af1'],
                 'health':            sat['health'],
             }
-        })
+        }
+        eph = rinex_data['ephemeris'].get(prn)
+        if eph:
+            resp['ephemeris'] = {
+                # SF1 — Clock
+                'toc':       eph['epoch'],
+                'gps_week':  eph['gps_week'],
+                'iodc':      eph['iodc'],
+                'af2':       eph['af2'],
+                'tgd':       eph['tgd'],
+                'ura':       eph['ura'],
+                'health_eph': eph['health'],
+                'l2_codes':  eph['l2_codes'],
+                'l2_p_flag': eph['l2_p_flag'],
+                # SF2 — Ephemeris 1
+                'iode':      int(eph['iode']),
+                'toe':       eph['toe'],
+                'delta_n':   eph['delta_n'],
+                'm0_deg':    math.degrees(eph['m0']),
+                'e_eph':     eph['e'],
+                'sqrt_a_eph': eph['sqrt_a'],
+                'crs':       eph['crs'],
+                'cus':       eph['cus'],
+                'cuc':       eph['cuc'],
+                'fit_interval': eph['fit_interval'],
+                # SF3 — Ephemeris 2
+                'omega0_deg': math.degrees(eph['omega0']),
+                'i0_deg':    math.degrees(eph['i0']),
+                'omega_deg': math.degrees(eph['omega']),
+                'omega_dot': eph['omega_dot'],
+                'idot':      eph['idot'],
+                'crc':       eph['crc'],
+                'cic':       eph['cic'],
+                'cis':       eph['cis'],
+                'rinex_date': rinex_data['date'],
+            }
+        return jsonify(resp)
 
     cache = {'GLONASS': glo_data, 'BEIDOU': bei_data, 'GALILEO': gal_data}.get(constellation)
     if not cache or not cache['tles']:

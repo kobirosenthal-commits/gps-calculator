@@ -127,6 +127,104 @@ def gps_time_from_datetime(dt):
     return (naive - GPS_EPOCH).total_seconds()
 
 
+def _fortran_float(s):
+    try:
+        return float(s.strip().replace('D', 'E').replace('d', 'e'))
+    except ValueError:
+        return 0.0
+
+
+def fetch_gps_rinex(dt):
+    """Fetch GPS RINEX 2.x broadcast nav file for date dt. Returns text or None."""
+    import gzip as gz
+    doy = dt.timetuple().tm_yday
+    yy = dt.year % 100
+    yyyy = dt.year
+    urls = [
+        f"https://noaa-cors-pds.s3.amazonaws.com/rinex/{yyyy}/{doy:03d}/brdc{doy:03d}0.{yy:02d}n.gz",
+        f"https://geodesy.noaa.gov/corsdata/rinex/{yyyy}/{doy:03d}/brdc{doy:03d}0.{yy:02d}n.gz",
+    ]
+    for url in urls:
+        try:
+            r = requests.get(url, timeout=30)
+            if r.status_code != 200:
+                log.warning(f"fetch_gps_rinex {url}: HTTP {r.status_code}")
+                continue
+            content = gz.decompress(r.content)
+            text = content.decode('utf-8', errors='replace')
+            if 'END OF HEADER' in text:
+                log.info(f"fetch_gps_rinex OK: {url} ({len(text)} bytes)")
+                return text
+        except Exception as e:
+            log.warning(f"fetch_gps_rinex {url}: {type(e).__name__}: {e}")
+    return None
+
+
+def parse_rinex2_nav(text):
+    """Parse RINEX 2.x GPS broadcast nav. Returns {prn: eph_dict} keyed on most-recent TOE."""
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        if 'END OF HEADER' in lines[i]:
+            i += 1
+            break
+        i += 1
+
+    result = {}
+    while i < len(lines) - 7:
+        ln = lines[i]
+        if len(ln) < 22:
+            i += 1
+            continue
+        try:
+            prn   = int(ln[0:2])
+            yy    = int(ln[3:5])
+            year  = 2000 + yy if yy < 80 else 1900 + yy
+            month = int(ln[6:8])
+            day   = int(ln[9:11])
+            hour  = int(ln[12:14])
+            minute = int(ln[15:17])
+            sec   = float(ln[17:22])
+            af0   = _fortran_float(ln[22:41])
+            af1   = _fortran_float(ln[41:60])
+            af2   = _fortran_float(ln[60:79])
+        except (ValueError, IndexError):
+            i += 1
+            continue
+
+        vals = []
+        for j in range(1, 8):
+            ol = lines[i + j] if i + j < len(lines) else ''
+            for k in range(4):
+                s = 3 + k * 19
+                vals.append(_fortran_float(ol[s:s + 19]) if len(ol) > s else 0.0)
+
+        if len(vals) < 28:
+            i += 8
+            continue
+
+        toe = vals[8]
+        if prn not in result or toe > result[prn]['toe']:
+            result[prn] = {
+                'prn':      prn,
+                'epoch':    f"{year:04d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{int(sec):02d}",
+                'af0': af0, 'af1': af1, 'af2': af2,
+                'iode': vals[0], 'crs': vals[1], 'delta_n': vals[2], 'm0': vals[3],
+                'cuc': vals[4], 'e': vals[5],    'cus': vals[6], 'sqrt_a': vals[7],
+                'toe': toe,
+                'cic': vals[9],  'omega0': vals[10], 'cis': vals[11],
+                'i0': vals[12],  'crc': vals[13],    'omega': vals[14], 'omega_dot': vals[15],
+                'idot': vals[16], 'l2_codes': int(vals[17]),
+                'gps_week': int(vals[18]), 'l2_p_flag': int(vals[19]),
+                'ura':    vals[20], 'health': int(vals[21]),
+                'tgd':    vals[22], 'iodc':   int(vals[23]),
+                'fit_interval': vals[25],
+            }
+        i += 8
+
+    return result
+
+
 def fetch_tle_group(group):
     urls = [
         f"https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=tle",
