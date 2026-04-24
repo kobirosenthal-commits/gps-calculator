@@ -2,7 +2,8 @@ from flask import Flask, render_template, request, jsonify
 from datetime import datetime, timedelta, timezone
 from gps_core import (fetch_almanac, parse_yuma, propagate, geodetic, gps_time_from_datetime,
                       fetch_tle_group, parse_tles, propagate_tle, fetch_glonass_slot_map,
-                      fetch_gps_rinex, parse_rinex2_nav)
+                      fetch_gps_rinex, parse_rinex2_nav,
+                      fetch_gps_rinex4, parse_rinex4_nav)
 import logging
 import math
 import re
@@ -29,6 +30,7 @@ GSAT_TO_PRN = {
 
 almanac_data = {'satellites': [], 'date': None, 'week': None, 'toa': None}
 rinex_data   = {'ephemeris': {}, 'date': None}
+rinex4_data  = {'ephemeris': {}, 'date': None}
 glo_data = {'tles': [], 'fetched': None}
 bei_data = {'tles': [], 'fetched': None}
 gal_data = {'tles': [], 'fetched': None}
@@ -122,6 +124,28 @@ def _rinex_refresh_worker():
 
 
 threading.Thread(target=_rinex_refresh_worker, daemon=True).start()
+
+
+def _rinex4_refresh_worker():
+    global rinex4_data
+    while True:
+        # BKG RINEX 4 files are typically available with ~1 day delay; try yesterday first
+        for offset in range(1, 4):
+            dt = datetime.now(timezone.utc) - timedelta(days=offset)
+            try:
+                text = fetch_gps_rinex4(dt)
+                if text:
+                    eph = parse_rinex4_nav(text)
+                    if eph:
+                        rinex4_data = {'ephemeris': eph, 'date': dt.strftime('%Y-%m-%d')}
+                        app.logger.info(f"RINEX4 loaded: {len(eph)} CNAV PRNs from {dt.strftime('%Y-%m-%d')}")
+                        break
+            except Exception as e:
+                app.logger.warning(f"RINEX4 refresh error: {e}")
+        time.sleep(6 * 3600)
+
+
+threading.Thread(target=_rinex4_refresh_worker, daemon=True).start()
 
 
 @app.errorhandler(500)
@@ -321,6 +345,40 @@ def satellite_detail():
                 'cic':       eph['cic'],
                 'cis':       eph['cis'],
                 'rinex_date': rinex_data['date'],
+            }
+        cnav = rinex4_data['ephemeris'].get(prn)
+        if cnav:
+            resp['cnav'] = {
+                'toc':          cnav['epoch'],
+                'gps_week':     cnav['gps_week'],
+                'toe':          cnav['toe'],
+                'af2':          cnav['af2'],
+                'tgd':          cnav['tgd'],
+                'adot':         cnav['adot'],
+                'delta_n':      cnav['delta_n'],
+                'delta_n_dot':  cnav['delta_n_dot'],
+                'm0_deg':       math.degrees(cnav['m0']),
+                'e_cnav':       cnav['e'],
+                'sqrt_a_cnav':  cnav['sqrt_a'],
+                'omega0_deg':   math.degrees(cnav['omega0']),
+                'i0_deg':       math.degrees(cnav['i0']),
+                'omega_deg':    math.degrees(cnav['omega']),
+                'omega_dot':    cnav['omega_dot'],
+                'idot':         cnav['idot'],
+                'crs':          cnav['crs'],
+                'cuc':          cnav['cuc'],
+                'cus':          cnav['cus'],
+                'crc':          cnav['crc'],
+                'cic':          cnav['cic'],
+                'cis':          cnav['cis'],
+                'urai_oe':      cnav['urai_oe'],
+                'urai_ed':      cnav['urai_ed'],
+                'isc_l1ca':     cnav['isc_l1ca'],
+                'isc_l2c':      cnav['isc_l2c'],
+                'isc_l5i5':     cnav['isc_l5i5'],
+                'isc_l5q5':     cnav['isc_l5q5'],
+                'top':          cnav['top'],
+                'rinex4_date':  rinex4_data['date'],
             }
         return jsonify(resp)
 

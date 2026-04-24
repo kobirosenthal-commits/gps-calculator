@@ -324,3 +324,124 @@ def propagate_tle(tle, dt):
     y = -rx * sg + ry * cg
     z = rz
     return {'x': x, 'y': y, 'z': z, 'r': math.sqrt(x * x + y * y + z * z)}
+
+
+def fetch_gps_rinex4(dt):
+    """Fetch RINEX 4 multi-GNSS broadcast nav for date dt from BKG. Returns text or None."""
+    import gzip as gz
+    doy = dt.timetuple().tm_yday
+    yyyy = dt.year
+    url = (f"https://igs.bkg.bund.de/root_ftp/IGS/BRDC/{yyyy}/{doy:03d}/"
+           f"BRD400DLR_S_{yyyy}{doy:03d}0000_01D_MN.rnx.gz")
+    try:
+        r = requests.get(url, timeout=60)
+        if r.status_code != 200:
+            log.warning(f"fetch_gps_rinex4 {url}: HTTP {r.status_code}")
+            return None
+        content = gz.decompress(r.content)
+        text = content.decode('utf-8', errors='replace')
+        if 'END OF HEADER' in text:
+            log.info(f"fetch_gps_rinex4 OK: {url} ({len(text)} bytes)")
+            return text
+        log.warning(f"fetch_gps_rinex4 {url}: no END OF HEADER")
+        return None
+    except Exception as e:
+        log.warning(f"fetch_gps_rinex4 {url}: {type(e).__name__}: {e}")
+        return None
+
+
+def parse_rinex4_nav(text):
+    """Parse RINEX 4 GPS CNAV (L2C/L5) records. Returns {prn: cnav_dict} with most recent TOE."""
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        if 'END OF HEADER' in lines[i]:
+            i += 1
+            break
+        i += 1
+
+    result = {}
+    while i < len(lines):
+        ln = lines[i]
+        if ln.startswith('> EPH ') and len(ln) >= 12:
+            parts = ln.split()
+            if len(parts) >= 4 and parts[2].startswith('G') and parts[3] == 'CNAV':
+                try:
+                    prn = int(parts[2][1:])
+                except (ValueError, IndexError):
+                    i += 1
+                    continue
+                i += 1
+                if i >= len(lines):
+                    break
+                # Epoch line: Gnn YYYY MM DD HH MM SS af0 af1 af2
+                el = lines[i]
+                try:
+                    year   = int(el[4:8])
+                    month  = int(el[9:11])
+                    day    = int(el[12:14])
+                    hour   = int(el[15:17])
+                    minute = int(el[18:20])
+                    af0    = float(el[23:42])
+                    af1    = float(el[42:61])
+                    af2    = float(el[61:80])
+                except (ValueError, IndexError):
+                    i += 1
+                    continue
+                # 8 broadcast orbit lines, 4 × E19.12 each, 4-space indent
+                vals = []
+                for j in range(1, 9):
+                    if i + j >= len(lines):
+                        break
+                    ol = lines[i + j]
+                    if ol.startswith('>'):
+                        break
+                    for k in range(4):
+                        s = 4 + k * 19
+                        try:
+                            v = float(ol[s:s + 19]) if len(ol) >= s + 8 else 0.0
+                        except (ValueError, IndexError):
+                            v = 0.0
+                        vals.append(v)
+                if len(vals) < 29:
+                    i += 1
+                    continue
+                toe = vals[8]
+                if prn not in result or toe > result[prn]['toe']:
+                    result[prn] = {
+                        'prn':        prn,
+                        'epoch':      f"{year:04d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:00",
+                        'af0': af0, 'af1': af1, 'af2': af2,
+                        'adot':       vals[0],
+                        'crs':        vals[1],
+                        'delta_n':    vals[2],
+                        'm0':         vals[3],
+                        'cuc':        vals[4],
+                        'e':          vals[5],
+                        'cus':        vals[6],
+                        'sqrt_a':     vals[7],
+                        'toe':        toe,
+                        'cic':        vals[9],
+                        'omega0':     vals[10],
+                        'cis':        vals[11],
+                        'i0':         vals[12],
+                        'crc':        vals[13],
+                        'omega':      vals[14],
+                        'omega_dot':  vals[15],
+                        'idot':       vals[16],
+                        'delta_n_dot': vals[17],
+                        'urai_oe':    vals[18],
+                        'urai_ed':    vals[20],
+                        'tgd':        vals[22],
+                        'isc_l1ca':   vals[24] if len(vals) > 24 else 0.0,
+                        'isc_l2c':    vals[25] if len(vals) > 25 else 0.0,
+                        'isc_l5i5':   vals[26] if len(vals) > 26 else 0.0,
+                        'isc_l5q5':   vals[27] if len(vals) > 27 else 0.0,
+                        'top':        vals[28],
+                        'gps_week':   int(vals[29]) if len(vals) > 29 else 0,
+                    }
+                i += 1
+                continue
+        i += 1
+
+    return result

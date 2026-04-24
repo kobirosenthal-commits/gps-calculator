@@ -836,6 +836,45 @@ function renderSatDetail(data, sat, rangeKm, elev, az) {
         html += '</div>';
     }
 
+    if (data.cnav) {
+        const c = data.cnav;
+        html += '<div class="sd-section"><h4>BROADCAST EPHEMERIS (CNAV — L2C / L5)</h4>';
+        html += '<div class="sd-sub">Clock</div>';
+        html += sdRow('toc (UTC)',       c.toc);
+        html += sdRow('GPS Week',        c.gps_week);
+        html += sdRow('ToE',             c.toe.toFixed(0) + ' s');
+        html += sdRow('TGD',             c.tgd.toExponential(3) + ' s');
+        html += sdRow('af₂',             c.af2.toExponential(3) + ' s/s²');
+        html += '<div class="sd-sub">Ephemeris</div>';
+        html += sdRow('√A',              c.sqrt_a_cnav.toFixed(3) + ' m½');
+        html += sdRow('Ȧ (Adot)',        c.adot.toExponential(3) + ' m/s');
+        html += sdRow('e',               c.e_cnav.toFixed(10));
+        html += sdRow('M₀',              c.m0_deg.toFixed(6) + '°');
+        html += sdRow('Δn',              c.delta_n.toExponential(3) + ' rad/s');
+        html += sdRow('Δṅ (delta n-dot)',c.delta_n_dot.toExponential(3) + ' rad/s²');
+        html += sdRow('Ω₀',              c.omega0_deg.toFixed(6) + '°');
+        html += sdRow('i₀',              c.i0_deg.toFixed(6) + '°');
+        html += sdRow('ω',               c.omega_deg.toFixed(6) + '°');
+        html += sdRow('dΩ/dt',           c.omega_dot.toExponential(3) + ' rad/s');
+        html += sdRow('IDOT',            c.idot.toExponential(3) + ' rad/s');
+        html += sdRow('Crs',             c.crs.toFixed(4) + ' m');
+        html += sdRow('Cuc',             c.cuc.toExponential(3) + ' rad');
+        html += sdRow('Cus',             c.cus.toExponential(3) + ' rad');
+        html += sdRow('Crc',             c.crc.toFixed(4) + ' m');
+        html += sdRow('Cic',             c.cic.toExponential(3) + ' rad');
+        html += sdRow('Cis',             c.cis.toExponential(3) + ' rad');
+        html += '<div class="sd-sub">Accuracy &amp; ISCs</div>';
+        html += sdRow('URAI_oe',         c.urai_oe.toFixed(0));
+        html += sdRow('URAI_ed',         c.urai_ed.toFixed(0));
+        html += sdRow('ISC L1C/A',       c.isc_l1ca.toExponential(3) + ' s');
+        html += sdRow('ISC L2C',         c.isc_l2c.toExponential(3) + ' s');
+        html += sdRow('ISC L5 I5',       c.isc_l5i5.toExponential(3) + ' s');
+        html += sdRow('ISC L5 Q5',       c.isc_l5q5.toExponential(3) + ' s');
+        html += sdRow('top',             c.top.toFixed(0) + ' s');
+        html += sdRow('Source',          'RINEX4 ' + c.rinex4_date);
+        html += '</div>';
+    }
+
     if (data.tle) {
         html += '<div class="sd-section"><h4>TLE EPHEMERIS</h4>';
         html += sdRow('Name', data.tle.name);
