@@ -87,7 +87,7 @@ def propagate(sat, gps_sec):
     xo = r * math.cos(phi)
     yo = r * math.sin(phi)
 
-    omega = sat['Om0'] + (sat['dOm'] - OMEGA_E) * tk - OMEGA_E * t_ref
+    omega = sat['Om0'] + (sat['dOm'] - OMEGA_E) * tk - OMEGA_E * sat['toa']
     cos_o = math.cos(omega)
     sin_o = math.sin(omega)
     cos_i = math.cos(sat['inc'])
@@ -157,6 +157,37 @@ def fetch_tle_group(group):
             snippet = text[:120].replace('\n', ' ')
             log.warning(f"fetch_tle_group({group}) {url} verify={verify}: unexpected body {snippet!r}")
     return None
+
+
+def fetch_glonass_slot_map():
+    """Fetch {NORAD: slot} mapping for operational GLONASS sats from the Russian IAC.
+       Slot is the orbital point number that Trimble and receivers display as R01-R24."""
+    url = 'https://glonass-iac.ru/glonass/sostavOG/sostavOG_json.php?lang=en&sort=point'
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    mapping = {}
+    try:
+        r = requests.get(url, timeout=15, verify=False, headers=headers)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        log.warning(f"GLONASS slot map fetch failed: {type(e).__name__}: {e}")
+        return mapping
+    for rec in data:
+        if rec.get('name') != 'OG':
+            continue
+        for sat in rec.get('data', []):
+            # IAC field 'point' is the orbital slot (R01-R24); 'slot' is the FDMA channel.
+            point = str(sat.get('point', '')).strip()
+            try:
+                norad = int(sat['NORAD'])
+            except (KeyError, ValueError, TypeError):
+                continue
+            if point.isdigit():
+                n = int(point)
+                if 1 <= n <= 24:
+                    mapping[norad] = n
+    log.info(f"GLONASS slot map: {len(mapping)} sats with operational slots")
+    return mapping
 
 
 def parse_tles(text):

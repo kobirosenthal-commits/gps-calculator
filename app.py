@@ -1,9 +1,10 @@
 from flask import Flask, render_template, request, jsonify
 from datetime import datetime, timedelta, timezone
 from gps_core import (fetch_almanac, parse_yuma, propagate, geodetic, gps_time_from_datetime,
-                      fetch_tle_group, parse_tles, propagate_tle)
+                      fetch_tle_group, parse_tles, propagate_tle, fetch_glonass_slot_map)
 import logging
 import math
+import re
 import threading
 import time
 
@@ -13,6 +14,18 @@ logging.getLogger('gps_core').setLevel(logging.INFO)
 
 app = Flask(__name__)
 
+# GSAT serial to Galileo PRN/SVID. Source: European GNSS Service Centre constellation
+# status. Stable — only changes when a satellite launches or is retired.
+GSAT_TO_PRN = {
+    101: 11, 102: 12, 103: 19,
+    201: 18, 202: 14,
+    203: 26, 206: 30, 207: 7, 208: 8, 209: 9,
+    211: 2, 212: 3, 213: 4, 214: 5,
+    215: 21, 216: 25, 217: 27, 218: 31, 219: 36,
+    220: 13, 221: 15, 222: 33, 223: 34, 224: 10, 225: 29,
+    226: 23, 227: 6, 232: 16,
+}
+
 almanac_data = {'satellites': [], 'date': None, 'week': None, 'toa': None}
 glo_data = {'tles': [], 'fetched': None}
 bei_data = {'tles': [], 'fetched': None}
@@ -20,7 +33,9 @@ gal_data = {'tles': [], 'fetched': None}
 
 
 def _load_tle_constellation(group, label_prefix):
-    """Fetch, parse and label TLEs for a constellation. Returns list or None."""
+    """Fetch, parse and label TLEs for a constellation. Returns list or None.
+       GLONASS labels are mapped to real orbital slot numbers (R01-R24) via the
+       Russian IAC feed; other constellations fall back to file order."""
     try:
         text = fetch_tle_group(group)
         if not text:
@@ -28,6 +43,22 @@ def _load_tle_constellation(group, label_prefix):
         tles = parse_tles(text)
         if not tles:
             return None
+        if label_prefix == 'R':
+            slot_map = fetch_glonass_slot_map()
+            kept = []
+            for tle in tles:
+                try:
+                    norad = int(tle['line1'][2:7])
+                except (ValueError, KeyError):
+                    continue
+                slot = slot_map.get(norad)
+                if not slot:
+                    continue  # not an operational GLONASS slot — drop
+                tle['id'] = slot
+                tle['label'] = f"R{slot:02d}"
+                kept.append(tle)
+            kept.sort(key=lambda t: t['id'])
+            return kept
         for i, tle in enumerate(tles):
             tle['id'] = i + 1
             tle['label'] = f"{label_prefix}{i + 1:02d}"
@@ -274,9 +305,53 @@ def push_tles():
         return jsonify({'error': 'No TLEs parsed'}), 400
 
     prefix = {'GLONASS': 'R', 'BEIDOU': 'C', 'GALILEO': 'E'}[constellation]
-    for i, tle in enumerate(tles):
-        tle['id'] = i + 1
-        tle['label'] = f"{prefix}{i + 1:02d}"
+    if constellation == 'GLONASS':
+        slot_map = fetch_glonass_slot_map()
+        kept = []
+        for tle in tles:
+            try:
+                norad = int(tle['line1'][2:7])
+            except (ValueError, KeyError):
+                continue
+            slot = slot_map.get(norad)
+            if not slot:
+                continue
+            tle['id'] = slot
+            tle['label'] = f"R{slot:02d}"
+            kept.append(tle)
+        kept.sort(key=lambda t: t['id'])
+        tles = kept
+    elif constellation == 'BEIDOU':
+        kept = []
+        for tle in tles:
+            m = re.search(r'\(C(\d+)\)', tle['name'])
+            if not m:
+                continue
+            prn = int(m.group(1))
+            tle['id'] = prn
+            tle['label'] = f"C{prn:02d}"
+            kept.append(tle)
+        kept.sort(key=lambda t: t['id'])
+        tles = kept
+    elif constellation == 'GALILEO':
+        kept = []
+        for tle in tles:
+            m = re.search(r'GSAT(\d{4})', tle['name'])
+            if not m:
+                continue
+            gsat = int(m.group(1))
+            prn = GSAT_TO_PRN.get(gsat)
+            if not prn:
+                continue
+            tle['id'] = prn
+            tle['label'] = f"E{prn:02d}"
+            kept.append(tle)
+        kept.sort(key=lambda t: t['id'])
+        tles = kept
+    else:
+        for i, tle in enumerate(tles):
+            tle['id'] = i + 1
+            tle['label'] = f"{prefix}{i + 1:02d}"
 
     entry = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
     if constellation == 'GLONASS':
