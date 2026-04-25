@@ -164,6 +164,18 @@
         .sp-row .sp-info { color: #5599cc; font-size: 0.76em; white-space: nowrap; }
         #sp-sidebar::-webkit-scrollbar { width: 3px; }
         #sp-sidebar::-webkit-scrollbar-thumb { background: #1a3a5c; }
+        #sp-filter-row {
+            display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 10px;
+            border-bottom: 1px solid #1a3a5c; background: #000010;
+            position: sticky; top: 30px; z-index: 1;
+        }
+        .sp-flt-btn {
+            background: none; border: 1px solid #1a3a5c; color: #5599cc;
+            cursor: pointer; padding: 2px 8px; border-radius: 10px;
+            font-size: 0.72em; font-family: inherit; transition: all 0.15s;
+        }
+        .sp-flt-btn:hover { border-color: #7ecfff; color: #aad8ff; }
+        .sp-flt-btn.sp-flt-active { background: rgba(100,180,255,0.18); border-color: #7ecfff; color: #fff; }
         #sp-content {
             flex: 1; overflow-y: auto; padding: 18px 22px;
             display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; align-content: start;
@@ -272,6 +284,13 @@
     <div id="sp-main">
         <div id="sp-sidebar">
             <div id="sp-sidebar-hdr">Satellites</div>
+            <div id="sp-filter-row">
+                <button class="sp-flt-btn sp-flt-active" data-c="ALL"     onclick="setSpConstFilter('ALL')">ALL</button>
+                <button class="sp-flt-btn"               data-c="GPS"     onclick="setSpConstFilter('GPS')">GPS</button>
+                <button class="sp-flt-btn"               data-c="GLONASS" onclick="setSpConstFilter('GLONASS')">GLO</button>
+                <button class="sp-flt-btn"               data-c="BEIDOU"  onclick="setSpConstFilter('BEIDOU')">BDS</button>
+                <button class="sp-flt-btn"               data-c="GALILEO" onclick="setSpConstFilter('GALILEO')">GAL</button>
+            </div>
             <div id="sp-sat-list"></div>
         </div>
         <div id="sp-content"></div>
@@ -963,9 +982,22 @@ function buildSatDetailHtml(data, sat, rangeKm, elev, az) {
 // ── Full-page satellite detail ────────────────────────────────────────
 let spSatList  = [];   // [{label, infoText, sat}] — ordered list for nav
 let spCurrentIdx = 0;
+let spConstFilter = 'ALL';
+
+function setSpConstFilter(c) {
+    spConstFilter = c;
+    document.querySelectorAll('.sp-flt-btn').forEach(b =>
+        b.classList.toggle('sp-flt-active', b.getAttribute('data-c') === c));
+    const currentLabel = document.getElementById('sp-sat-label').textContent;
+    spSatList = buildSpList();
+    if (!spSatList.find(s => s.label === currentLabel)) spCurrentIdx = 0;
+    renderSpSidebar(currentLabel);
+    renderSpNav(currentLabel);
+}
 
 function buildSpList() {
-    const sats = lastSatellites.filter(s => enabledConst[s.constellation]);
+    let sats = lastSatellites.filter(s => enabledConst[s.constellation]);
+    if (spConstFilter !== 'ALL') sats = sats.filter(s => s.constellation === spConstFilter);
     if (receiver) {
         const mask = elevMask();
         return sats
@@ -1051,6 +1083,9 @@ function loadSpContent(sat) {
 }
 
 function openSatPage(sat) {
+    spConstFilter = 'ALL';
+    document.querySelectorAll('.sp-flt-btn').forEach(b =>
+        b.classList.toggle('sp-flt-active', b.getAttribute('data-c') === 'ALL'));
     spSatList = buildSpList();
     if (!spSatList.find(s => s.label === sat.label)) {
         spSatList.unshift({ label: sat.label, infoText: '', sat });
