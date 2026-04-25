@@ -961,6 +961,96 @@ function buildSatDetailHtml(data, sat, rangeKm, elev, az) {
             '<div class="sd-pending">RINEX-4 data loading from BKG — auto-refreshing…</div></div>';
     }
 
+    if (data.beidou_d) {
+        const b = data.beidou_d;
+        const sigLabel = b.msg_type === 'D2' ? 'D2 (B1I/B2I/B3I, GEO)' : 'D1 (B1I/B2I/B3I, MEO/IGSO)';
+        html += '<div class="sd-section" id="sd-bds-d"><h4>BROADCAST EPHEMERIS — ' + sigLabel + '</h4>';
+        html += '<div class="sd-sub">Clock &amp; Status</div>';
+        html += sdRow('toc (UTC)',       b.toc);
+        html += sdRow('BDT Week',        b.bdt_week);
+        html += sdRow('AODE',            b.aode);
+        html += sdRow('AODC',            b.aodc);
+        html += sdRow('SV accuracy',     b.ura_index.toFixed(1));
+        html += sdRow('SatH1',           b.sat_h1 === 0
+            ? '<span style="color:#00ff88">0 — Healthy</span>'
+            : '<span style="color:#ff5555">' + b.sat_h1 + ' — Unhealthy</span>');
+        html += sdRow('TGD₁ (B1/B3)',    b.tgd1.toExponential(3) + ' s');
+        html += sdRow('TGD₂ (B2/B3)',    b.tgd2.toExponential(3) + ' s');
+        html += sdRow('af₀',             b.af0.toExponential(3) + ' s');
+        html += sdRow('af₁',             b.af1.toExponential(3) + ' s/s');
+        html += sdRow('af₂',             b.af2.toExponential(3) + ' s/s²');
+        html += '<div class="sd-sub">Ephemeris I</div>';
+        html += sdRow('ToE',             b.toe.toFixed(0) + ' s');
+        html += sdRow('√A',              b.sqrt_a.toFixed(3) + ' m½');
+        html += sdRow('e',               b.e.toFixed(10));
+        html += sdRow('M₀',              b.m0_deg.toFixed(6) + '°');
+        html += sdRow('Δn',              b.delta_n.toExponential(3) + ' rad/s');
+        html += sdRow('Cus',             b.cus.toExponential(3) + ' rad');
+        html += sdRow('Cuc',             b.cuc.toExponential(3) + ' rad');
+        html += sdRow('Crs',             b.crs.toFixed(4) + ' m');
+        html += '<div class="sd-sub">Ephemeris II</div>';
+        html += sdRow('Ω₀',              b.omega0_deg.toFixed(6) + '°');
+        html += sdRow('i₀',              b.i0_deg.toFixed(6) + '°');
+        html += sdRow('ω',               b.omega_deg.toFixed(6) + '°');
+        html += sdRow('dΩ/dt',           b.omega_dot.toExponential(3) + ' rad/s');
+        html += sdRow('IDOT',            b.idot.toExponential(3) + ' rad/s');
+        html += sdRow('Crc',             b.crc.toFixed(4) + ' m');
+        html += sdRow('Cic',             b.cic.toExponential(3) + ' rad');
+        html += sdRow('Cis',             b.cis.toExponential(3) + ' rad');
+        html += sdRow('Tx time',         b.tx_time.toFixed(0) + ' s');
+        html += sdRow('Source',          'RINEX4 ' + b.rinex_date);
+        html += '</div>';
+    } else if (sat.constellation === 'BEIDOU') {
+        html += '<div class="sd-section" id="sd-bds-d"><h4>BROADCAST EPHEMERIS — D1/D2 (B1I/B2I/B3I)</h4>' +
+            '<div class="sd-pending">RINEX-4 data loading from BKG — auto-refreshing…</div></div>';
+    }
+
+    if (data.beidou_cnv1) {
+        const c = data.beidou_cnv1;
+        html += '<div class="sd-section" id="sd-bds-cnv1"><h4>BROADCAST EPHEMERIS — B-CNAV1 (B1C)</h4>';
+        html += '<div class="sd-sub">Clock</div>';
+        html += sdRow('toc (UTC)',        c.toc);
+        html += sdRow('ToE',              c.toe.toFixed(0) + ' s');
+        html += sdRow('top',              c.top.toFixed(0) + ' s');
+        html += sdRow('TGD B1Cp',         c.tgd_b1cp.toExponential(3) + ' s');
+        html += sdRow('TGD B2ap',         c.tgd_b2ap.toExponential(3) + ' s');
+        html += sdRow('ISC B1Cd',         c.isc_b1cd.toExponential(3) + ' s');
+        html += sdRow('af₀',              c.af0.toExponential(3) + ' s');
+        html += sdRow('af₁',              c.af1.toExponential(3) + ' s/s');
+        html += sdRow('af₂',              c.af2.toExponential(3) + ' s/s²');
+        html += '<div class="sd-sub">Ephemeris</div>';
+        html += sdRow('√A',               c.sqrt_a.toFixed(3) + ' m½');
+        html += sdRow('Ȧ (Adot)',         c.adot.toExponential(3) + ' m/s');
+        html += sdRow('e',                c.e.toFixed(10));
+        html += sdRow('M₀',               c.m0_deg.toFixed(6) + '°');
+        html += sdRow('Δn',               c.delta_n.toExponential(3) + ' rad/s');
+        html += sdRow('Δṅ (delta n-dot)', c.delta_n_dot.toExponential(3) + ' rad/s²');
+        html += sdRow('Ω₀',               c.omega0_deg.toFixed(6) + '°');
+        html += sdRow('i₀',               c.i0_deg.toFixed(6) + '°');
+        html += sdRow('ω',                c.omega_deg.toFixed(6) + '°');
+        html += sdRow('dΩ/dt',            c.omega_dot.toExponential(3) + ' rad/s');
+        html += sdRow('IDOT',             c.idot.toExponential(3) + ' rad/s');
+        html += sdRow('Crs',              c.crs.toFixed(4) + ' m');
+        html += sdRow('Cuc',              c.cuc.toExponential(3) + ' rad');
+        html += sdRow('Cus',              c.cus.toExponential(3) + ' rad');
+        html += sdRow('Crc',              c.crc.toFixed(4) + ' m');
+        html += sdRow('Cic',              c.cic.toExponential(3) + ' rad');
+        html += sdRow('Cis',              c.cis.toExponential(3) + ' rad');
+        html += '<div class="sd-sub">Integrity &amp; Health</div>';
+        const satTypeMap = {0: 'Reserved', 1: 'GEO', 2: 'IGSO', 3: 'MEO'};
+        html += sdRow('Sat type',         satTypeMap[c.sat_type] || c.sat_type);
+        html += sdRow('SISAI_oe',         c.sisai_oe.toFixed(0));
+        html += sdRow('SISAI_ocb',        c.sisai_ocb.toFixed(0));
+        html += sdRow('SISAI_oc1',        c.sisai_oc1.toFixed(0));
+        html += sdRow('SISAI_oc2',        c.sisai_oc2.toFixed(0));
+        html += sdRow('SISMAI',           c.sismai.toFixed(0));
+        html += sdRow('Health',           c.health === 0
+            ? '<span style="color:#00ff88">0 — Healthy</span>'
+            : '<span style="color:#ff5555">' + c.health + ' — Unhealthy</span>');
+        html += sdRow('Source',           'RINEX4 ' + c.rinex_date);
+        html += '</div>';
+    }
+
     if (data.tle) {
         html += '<div class="sd-section"><h4>TLE EPHEMERIS</h4>';
         html += sdRow('Name', data.tle.name);

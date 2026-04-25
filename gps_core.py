@@ -520,3 +520,177 @@ def parse_rinex4_nav(text):
         i += 1
 
     return result
+
+
+def _read_rinex4_record(lines, i, n_data_lines):
+    """Read one RINEX 4 EPH record starting at the epoch line at lines[i].
+    Returns (vals, year, month, day, hour, minute, af0, af1, af2, next_i)
+    or (None, ...) on parse error. vals is a flat list of 4 * n_data_lines floats.
+    """
+    if i >= len(lines):
+        return None
+    el = lines[i]
+    try:
+        year   = int(el[4:8])
+        month  = int(el[9:11])
+        day    = int(el[12:14])
+        hour   = int(el[15:17])
+        minute = int(el[18:20])
+        af0    = float(el[23:42])
+        af1    = float(el[42:61])
+        af2    = float(el[61:80])
+    except (ValueError, IndexError):
+        return None
+    vals = []
+    for j in range(1, n_data_lines + 1):
+        if i + j >= len(lines):
+            break
+        ol = lines[i + j]
+        if ol.startswith('>'):
+            break
+        for k in range(4):
+            s = 4 + k * 19
+            try:
+                v = float(ol[s:s + 19]) if len(ol) >= s + 8 else 0.0
+            except (ValueError, IndexError):
+                v = 0.0
+            vals.append(v)
+    return {
+        'vals': vals, 'year': year, 'month': month, 'day': day,
+        'hour': hour, 'minute': minute,
+        'af0': af0, 'af1': af1, 'af2': af2,
+    }
+
+
+def parse_rinex4_beidou(text):
+    """Parse RINEX 4 BeiDou D1/D2 (legacy B1I/B2I/B3I) and CNV1 (B-CNAV1, B1C) records.
+
+    Returns {'d': {prn: dict}, 'cnv1': {prn: dict}}, each value keyed on most-recent ToE.
+    The 'd' bucket merges D1 (MEO/IGSO) and D2 (GEO) since both encode the same
+    Kepler set with identical 8-line layout; the dict's 'msg_type' field tells them apart.
+    """
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        if 'END OF HEADER' in lines[i]:
+            i += 1
+            break
+        i += 1
+
+    d_result = {}
+    cnv1_result = {}
+
+    while i < len(lines):
+        ln = lines[i]
+        if not ln.startswith('> EPH '):
+            i += 1
+            continue
+        parts = ln.split()
+        if len(parts) < 4 or not parts[2].startswith('C'):
+            i += 1
+            continue
+        msg_type = parts[3]
+        try:
+            prn = int(parts[2][1:])
+        except (ValueError, IndexError):
+            i += 1
+            continue
+
+        i += 1  # advance to epoch line
+        if msg_type in ('D1', 'D2'):
+            rec = _read_rinex4_record(lines, i, 8)
+            # Field layout per line (4 vals each, indexes 0-31):
+            #   L1 0-3: AODE, Crs, dn, M0     L2 4-7: Cuc, e, Cus, sqrtA
+            #   L3 8-11: Toe, Cic, Om0, Cis   L4 12-15: i0, Crc, om, OmDot
+            #   L5 16-19: IDOT, _, BDTwk, _   L6 20-23: SVacc, SatH1, TGD1, TGD2
+            #   L7 24-27: TxTime, AODC, _, _
+            if not rec or len(rec['vals']) < 26:
+                i += 1
+                continue
+            v = rec['vals']
+            toe = v[8]
+            week = int(v[18]) if len(v) > 18 else 0
+            existing = d_result.get(prn)
+            if (not existing) or (week, toe) > (existing.get('bdt_week', 0), existing['toe']):
+                d_result[prn] = {
+                    'prn':       prn,
+                    'msg_type':  msg_type,
+                    'epoch':     f"{rec['year']:04d}-{rec['month']:02d}-{rec['day']:02d} {rec['hour']:02d}:{rec['minute']:02d}:00",
+                    'af0': rec['af0'], 'af1': rec['af1'], 'af2': rec['af2'],
+                    'aode':      v[0],
+                    'crs':       v[1],
+                    'delta_n':   v[2],
+                    'm0':        v[3],
+                    'cuc':       v[4],
+                    'e':         v[5],
+                    'cus':       v[6],
+                    'sqrt_a':    v[7],
+                    'toe':       toe,
+                    'cic':       v[9],
+                    'omega0':    v[10],
+                    'cis':       v[11],
+                    'i0':        v[12],
+                    'crc':       v[13],
+                    'omega':     v[14],
+                    'omega_dot': v[15],
+                    'idot':      v[16],
+                    'bdt_week':  week,
+                    'ura_index': v[20] if len(v) > 20 else 0.0,
+                    'sat_h1':    int(v[21]) if len(v) > 21 else 0,
+                    'tgd1':      v[22] if len(v) > 22 else 0.0,
+                    'tgd2':      v[23] if len(v) > 23 else 0.0,
+                    'tx_time':   v[24] if len(v) > 24 else 0.0,
+                    'aodc':      v[25] if len(v) > 25 else 0.0,
+                }
+            i += 1
+            continue
+        if msg_type == 'CNV1':
+            rec = _read_rinex4_record(lines, i, 10)
+            if not rec or len(rec['vals']) < 30:
+                i += 1
+                continue
+            v = rec['vals']
+            toe = v[8]
+            existing = cnv1_result.get(prn)
+            if (not existing) or toe > existing['toe']:
+                cnv1_result[prn] = {
+                    'prn':         prn,
+                    'epoch':       f"{rec['year']:04d}-{rec['month']:02d}-{rec['day']:02d} {rec['hour']:02d}:{rec['minute']:02d}:00",
+                    'af0': rec['af0'], 'af1': rec['af1'], 'af2': rec['af2'],
+                    'adot':        v[0],
+                    'crs':         v[1],
+                    'delta_n':     v[2],
+                    'm0':          v[3],
+                    'cuc':         v[4],
+                    'e':           v[5],
+                    'cus':         v[6],
+                    'sqrt_a':      v[7],
+                    'toe':         toe,
+                    'cic':         v[9],
+                    'omega0':      v[10],
+                    'cis':         v[11],
+                    'i0':          v[12],
+                    'crc':         v[13],
+                    'omega':       v[14],
+                    'omega_dot':   v[15],
+                    'idot':        v[16],
+                    'delta_n_dot': v[17],
+                    'sat_type':    int(v[18]) if len(v) > 18 else 0,
+                    'top':         v[19] if len(v) > 19 else 0.0,
+                    'sisai_oe':    v[20] if len(v) > 20 else 0.0,
+                    'sisai_ocb':   v[21] if len(v) > 21 else 0.0,
+                    'sisai_oc1':   v[22] if len(v) > 22 else 0.0,
+                    'sisai_oc2':   v[23] if len(v) > 23 else 0.0,
+                    'isc_b1cd':    v[24] if len(v) > 24 else 0.0,
+                    'tgd_b1cp':    v[26] if len(v) > 26 else 0.0,
+                    'tgd_b2ap':    v[27] if len(v) > 27 else 0.0,
+                    'sismai':      v[28] if len(v) > 28 else 0.0,
+                    'health':      int(v[29]) if len(v) > 29 else 0,
+                    'integrity':   int(v[30]) if len(v) > 30 else 0,
+                    'tx_time':     v[32] if len(v) > 32 else 0.0,
+                }
+            i += 1
+            continue
+        i += 1
+
+    return {'d': d_result, 'cnv1': cnv1_result}
