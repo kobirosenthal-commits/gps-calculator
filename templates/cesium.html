@@ -186,6 +186,8 @@
         .sd-sf-label { font-size: 0.75em; color: #5599cc; margin-top: 2px; }
         .sd-sf-desc { font-size: 0.8em; color: #aac; margin-top: 5px; }
         .tle-box { font-family: monospace; font-size: 0.7em; color: #8aaccc; background: rgba(0,20,50,0.6); padding: 5px 7px; border-radius: 3px; margin: 3px 0; word-break: break-all; line-height: 1.6; }
+        .sd-pending { color: #3a6a9a; font-size: 0.82em; padding: 10px 0 4px; display: flex; align-items: center; gap: 8px; }
+        .sd-pending::before { content: ''; display: inline-block; width: 10px; height: 10px; border: 2px solid #1a3a5c; border-top-color: #5599cc; border-radius: 50%; animation: spin 1.2s linear infinite; flex-shrink: 0; }
 
         /* Zoom controls */
         #zoom-ctrl {
@@ -864,7 +866,7 @@ function buildSatDetailHtml(data, sat, rangeKm, elev, az) {
     if (data.ephemeris) {
         const e = data.ephemeris;
         const l2Map = {0:'Reserved', 1:'P-code', 2:'C/A-code', 3:'L2C'};
-        html += '<div class="sd-section"><h4>BROADCAST EPHEMERIS — LNAV</h4>';
+        html += '<div class="sd-section" id="sd-lnav"><h4>BROADCAST EPHEMERIS — LNAV</h4>';
         html += '<div class="sd-sub">Subframe 1 — Clock &amp; Status</div>';
         html += sdRow('toc (UTC)',       e.toc);
         html += sdRow('GPS Week',        e.gps_week);
@@ -901,9 +903,14 @@ function buildSatDetailHtml(data, sat, rangeKm, elev, az) {
         html += '</div>';
     }
 
+    } else if (sat.constellation === 'GPS') {
+        html += '<div class="sd-section" id="sd-lnav"><h4>BROADCAST EPHEMERIS — LNAV</h4>' +
+            '<div class="sd-pending">RINEX data loading from NOAA — auto-refreshing…</div></div>';
+    }
+
     if (data.cnav) {
         const c = data.cnav;
-        html += '<div class="sd-section"><h4>BROADCAST EPHEMERIS — CNAV (L2C / L5)</h4>';
+        html += '<div class="sd-section" id="sd-cnav"><h4>BROADCAST EPHEMERIS — CNAV (L2C / L5)</h4>';
         html += '<div class="sd-sub">Clock</div>';
         html += sdRow('toc (UTC)',        c.toc);
         html += sdRow('GPS Week',         c.gps_week);
@@ -938,6 +945,9 @@ function buildSatDetailHtml(data, sat, rangeKm, elev, az) {
         html += sdRow('top',              c.top.toFixed(0) + ' s');
         html += sdRow('Source',           'RINEX4 ' + c.rinex4_date);
         html += '</div>';
+    } else if (sat.constellation === 'GPS') {
+        html += '<div class="sd-section" id="sd-cnav"><h4>BROADCAST EPHEMERIS — CNAV (L2C / L5)</h4>' +
+            '<div class="sd-pending">RINEX-4 data loading from BKG — auto-refreshing…</div></div>';
     }
 
     if (data.tle) {
@@ -1025,6 +1035,17 @@ function loadSpContent(sat) {
                 const el = document.getElementById('sd-sf-display');
                 if (el) el.outerHTML = renderNavBlock(sat.constellation);
             }, 1000);
+            // If GPS RINEX sections are still pending, reload automatically once ready
+            const lnavPending = sat.constellation === 'GPS' && !data.ephemeris;
+            const cnavPending = sat.constellation === 'GPS' && !data.cnav;
+            if (lnavPending || cnavPending) {
+                setTimeout(() => {
+                    if (document.getElementById('sat-page').classList.contains('open') &&
+                        document.getElementById('sp-sat-label').textContent === label) {
+                        loadSpContent(satData[label] || sat);
+                    }
+                }, 30000);
+            }
         })
         .catch(() => {
             content.innerHTML = '<div style="color:#ff5555;grid-column:1/-1">Failed to load detail data.</div>';

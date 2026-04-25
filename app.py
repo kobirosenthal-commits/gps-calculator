@@ -108,6 +108,7 @@ threading.Thread(target=_tle_refresh_worker, daemon=True).start()
 def _rinex_refresh_worker():
     global rinex_data
     while True:
+        loaded = False
         for offset in range(3):
             dt = datetime.now(timezone.utc) - timedelta(days=offset)
             try:
@@ -117,10 +118,11 @@ def _rinex_refresh_worker():
                     if eph:
                         rinex_data = {'ephemeris': eph, 'date': dt.strftime('%Y-%m-%d')}
                         app.logger.info(f"RINEX loaded: {len(eph)} PRNs from {dt.strftime('%Y-%m-%d')}")
+                        loaded = True
                         break
             except Exception as e:
                 app.logger.warning(f"RINEX refresh error: {e}")
-        time.sleep(6 * 3600)
+        time.sleep(6 * 3600 if loaded else 120)
 
 
 threading.Thread(target=_rinex_refresh_worker, daemon=True).start()
@@ -129,6 +131,7 @@ threading.Thread(target=_rinex_refresh_worker, daemon=True).start()
 def _rinex4_refresh_worker():
     global rinex4_data
     while True:
+        loaded = False
         # BKG RINEX 4 files are typically available with ~1 day delay; try yesterday first
         for offset in range(1, 4):
             dt = datetime.now(timezone.utc) - timedelta(days=offset)
@@ -139,10 +142,11 @@ def _rinex4_refresh_worker():
                     if eph:
                         rinex4_data = {'ephemeris': eph, 'date': dt.strftime('%Y-%m-%d')}
                         app.logger.info(f"RINEX4 loaded: {len(eph)} CNAV PRNs from {dt.strftime('%Y-%m-%d')}")
+                        loaded = True
                         break
             except Exception as e:
                 app.logger.warning(f"RINEX4 refresh error: {e}")
-        time.sleep(6 * 3600)
+        time.sleep(6 * 3600 if loaded else 120)
 
 
 threading.Thread(target=_rinex4_refresh_worker, daemon=True).start()
@@ -391,6 +395,14 @@ def satellite_detail():
     return jsonify({
         'label': label, 'constellation': constellation,
         'tle': {'name': tle['name'], 'line1': tle['line1'], 'line2': tle['line2']},
+    })
+
+
+@app.route('/api/rinex-status', methods=['GET'])
+def rinex_status():
+    return jsonify({
+        'lnav': {'loaded': bool(rinex_data['ephemeris']), 'date': rinex_data['date'], 'prns': len(rinex_data['ephemeris'])},
+        'cnav': {'loaded': bool(rinex4_data['ephemeris']), 'date': rinex4_data['date'], 'prns': len(rinex4_data['ephemeris'])},
     })
 
 
