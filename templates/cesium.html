@@ -1262,8 +1262,11 @@ async function pushTLEsFromBrowser(group, constellation) {
         console.warn(`Server TLE proxy error for ${constellation}:`, e.message);
     }
 
-    // Fallback: browser fetches directly from Celestrak and pushes text to server
+    // Fallback: browser fetches TLE text and pushes to server.
+    // GitHub raw is reachable from any browser (no IP blocks, sends CORS headers)
+    // and is refreshed every 6h by the update-tles GitHub Action.
     const urls = [
+        `https://raw.githubusercontent.com/kobirosenthal-commits/gps-calculator/main/data/${group}.tle`,
         `https://celestrak.org/NORAD/elements/gp.php?GROUP=${group}&FORMAT=tle`,
         `https://www.celestrak.com/NORAD/elements/gp.php?GROUP=${group}&FORMAT=tle`,
     ];
