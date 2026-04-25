@@ -901,8 +901,6 @@ function buildSatDetailHtml(data, sat, rangeKm, elev, az) {
         html += sdRow('Cis',             e.cis.toExponential(3) + ' rad');
         html += sdRow('Source',          'RINEX ' + e.rinex_date);
         html += '</div>';
-    }
-
     } else if (sat.constellation === 'GPS') {
         html += '<div class="sd-section" id="sd-lnav"><h4>BROADCAST EPHEMERIS — LNAV</h4>' +
             '<div class="sd-pending">RINEX data loading from NOAA — auto-refreshing…</div></div>';

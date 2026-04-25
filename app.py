@@ -67,7 +67,8 @@ def _load_tle_constellation(group, label_prefix):
             tle['id'] = i + 1
             tle['label'] = f"{label_prefix}{i + 1:02d}"
         return tles
-    except Exception:
+    except Exception as e:
+        log.warning(f"_load_tle_constellation({group}): {type(e).__name__}: {e}")
         return None
 
 
@@ -505,12 +506,14 @@ def live_positions():
             candidate = dt - timedelta(days=offset)
             try:
                 text = fetch_almanac(candidate.year, candidate.timetuple().tm_yday)
-            except Exception:
+            except Exception as e:
+                log.warning(f"fetch_almanac: {type(e).__name__}: {e}")
                 text = None
             if text:
                 try:
                     satellites = parse_yuma(text)
-                except Exception:
+                except Exception as e:
+                    log.warning(f"parse_yuma: {type(e).__name__}: {e}")
                     satellites = None
                 if satellites:
                     almanac_data = {
@@ -557,8 +560,8 @@ def live_positions():
                     'x': pos['x'], 'y': pos['y'], 'z': pos['z'],
                     'lat': round(geo['lat'], 4), 'lon': round(geo['lon'], 4), 'alt_km': round(geo['alt'] / 1000, 1),
                 })
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(f"propagate_tle({tle.get('label')}): {type(e).__name__}: {e}")
 
     return jsonify({
         'time': now.strftime("%Y-%m-%d %H:%M:%S UTC"),
