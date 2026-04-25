@@ -694,3 +694,96 @@ def parse_rinex4_beidou(text):
         i += 1
 
     return {'d': d_result, 'cnv1': cnv1_result}
+
+
+def parse_rinex4_galileo(text):
+    """Parse RINEX 4 Galileo I/NAV and F/NAV records.
+
+    Both message types share an 8-line layout with the same Kepler set as
+    GPS LNAV. Field positions (per RINEX 4 Galileo nav spec):
+        L1 0-3:  IODnav, Crs, dn, M0
+        L2 4-7:  Cuc, e, Cus, sqrtA
+        L3 8-11: Toe, Cic, Om0, Cis
+        L4 12-15: i0, Crc, om, OmDot
+        L5 16-19: IDOT, DataSources, GALWeek, _
+        L6 20-23: SISA[m], SVhealth, BGD_E5a_E1[s], BGD_E5b_E1[s]
+        L7 24-27: TxTime, _, _, _
+
+    Returns {'inav': {prn: dict}, 'fnav': {prn: dict}}, each keyed on most-recent
+    (GAL_week, ToE). I/NAV carries both BGD values; F/NAV only carries E5a/E1.
+    """
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        if 'END OF HEADER' in lines[i]:
+            i += 1
+            break
+        i += 1
+
+    inav_result = {}
+    fnav_result = {}
+
+    while i < len(lines):
+        ln = lines[i]
+        if not ln.startswith('> EPH '):
+            i += 1
+            continue
+        parts = ln.split()
+        if len(parts) < 4 or not parts[2].startswith('E'):
+            i += 1
+            continue
+        msg_type = parts[3]
+        if msg_type not in ('INAV', 'FNAV'):
+            i += 1
+            continue
+        try:
+            prn = int(parts[2][1:])
+        except (ValueError, IndexError):
+            i += 1
+            continue
+
+        i += 1  # advance to epoch line
+        rec = _read_rinex4_record(lines, i, 8)
+        if not rec or len(rec['vals']) < 25:
+            i += 1
+            continue
+        v = rec['vals']
+        toe = v[8]
+        week = int(v[18]) if len(v) > 18 else 0
+        record = {
+            'prn':           prn,
+            'msg_type':      msg_type,
+            'epoch':         f"{rec['year']:04d}-{rec['month']:02d}-{rec['day']:02d} {rec['hour']:02d}:{rec['minute']:02d}:00",
+            'af0': rec['af0'], 'af1': rec['af1'], 'af2': rec['af2'],
+            'iodnav':        int(v[0]),
+            'crs':           v[1],
+            'delta_n':       v[2],
+            'm0':            v[3],
+            'cuc':           v[4],
+            'e':             v[5],
+            'cus':           v[6],
+            'sqrt_a':        v[7],
+            'toe':           toe,
+            'cic':           v[9],
+            'omega0':        v[10],
+            'cis':           v[11],
+            'i0':            v[12],
+            'crc':           v[13],
+            'omega':         v[14],
+            'omega_dot':     v[15],
+            'idot':          v[16],
+            'data_sources':  int(v[17]),
+            'gal_week':      week,
+            'sisa':          v[20] if len(v) > 20 else 0.0,
+            'sv_health':     int(v[21]) if len(v) > 21 else 0,
+            'bgd_e5a_e1':    v[22] if len(v) > 22 else 0.0,
+            'bgd_e5b_e1':    v[23] if len(v) > 23 else 0.0,
+            'tx_time':       v[24] if len(v) > 24 else 0.0,
+        }
+        target = inav_result if msg_type == 'INAV' else fnav_result
+        existing = target.get(prn)
+        if (not existing) or (week, toe) > (existing['gal_week'], existing['toe']):
+            target[prn] = record
+        i += 1
+
+    return {'inav': inav_result, 'fnav': fnav_result}

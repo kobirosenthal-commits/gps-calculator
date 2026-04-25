@@ -3,7 +3,8 @@ from datetime import datetime, timedelta, timezone
 from gps_core import (fetch_almanac, parse_yuma, propagate, geodetic, gps_time_from_datetime,
                       fetch_tle_group, parse_tles, propagate_tle, fetch_glonass_slot_map,
                       fetch_gps_rinex, parse_rinex2_nav,
-                      fetch_gps_rinex4, parse_rinex4_nav, parse_rinex4_beidou)
+                      fetch_gps_rinex4, parse_rinex4_nav, parse_rinex4_beidou,
+                      parse_rinex4_galileo)
 import logging
 log = logging.getLogger(__name__)
 import math
@@ -34,6 +35,8 @@ rinex_data   = {'ephemeris': {}, 'date': None}
 rinex4_data  = {'ephemeris': {}, 'date': None}
 bei_d_data   = {'ephemeris': {}, 'date': None}  # BeiDou D1/D2 (legacy B1I/B2I/B3I)
 bei_cnv1_data = {'ephemeris': {}, 'date': None}  # BeiDou-3 B-CNAV1 (B1C)
+gal_inav_data = {'ephemeris': {}, 'date': None}  # Galileo I/NAV (E1-B, E5b-I)
+gal_fnav_data = {'ephemeris': {}, 'date': None}  # Galileo F/NAV (E5a-I)
 glo_data = {'tles': [], 'fetched': None}
 bei_data = {'tles': [], 'fetched': None}
 gal_data = {'tles': [], 'fetched': None}
@@ -137,8 +140,8 @@ threading.Thread(target=_rinex_refresh_worker, daemon=True).start()
 
 def _rinex4_refresh_worker():
     """Single worker for the multi-GNSS RINEX 4 file: parses GPS CNAV plus
-    BeiDou D1/D2 and BeiDou-3 CNV1 from the same source file."""
-    global rinex4_data, bei_d_data, bei_cnv1_data
+    BeiDou D1/D2, BeiDou-3 CNV1, and Galileo I/NAV + F/NAV from the same source."""
+    global rinex4_data, bei_d_data, bei_cnv1_data, gal_inav_data, gal_fnav_data
     while True:
         loaded = False
         # BKG RINEX 4 files are typically available with ~1 day delay; try yesterday first
@@ -162,6 +165,15 @@ def _rinex4_refresh_worker():
                 if bei['cnv1']:
                     bei_cnv1_data = {'ephemeris': bei['cnv1'], 'date': date_str}
                     app.logger.info(f"RINEX4 loaded: {len(bei['cnv1'])} BeiDou CNV1 PRNs from {date_str}")
+                    loaded = True
+                gal = parse_rinex4_galileo(text)
+                if gal['inav']:
+                    gal_inav_data = {'ephemeris': gal['inav'], 'date': date_str}
+                    app.logger.info(f"RINEX4 loaded: {len(gal['inav'])} Galileo I/NAV PRNs from {date_str}")
+                    loaded = True
+                if gal['fnav']:
+                    gal_fnav_data = {'ephemeris': gal['fnav'], 'date': date_str}
+                    app.logger.info(f"RINEX4 loaded: {len(gal['fnav'])} Galileo F/NAV PRNs from {date_str}")
                     loaded = True
                 if loaded:
                     break
@@ -492,6 +504,46 @@ def satellite_detail():
                 'integrity':   cnv1['integrity'],
                 'rinex_date':  bei_cnv1_data['date'],
             }
+    if constellation == 'GALILEO':
+        prn = tle.get('id')
+        for src_name, src_data, key in (
+            ('inav', gal_inav_data, 'galileo_inav'),
+            ('fnav', gal_fnav_data, 'galileo_fnav'),
+        ):
+            rec = src_data['ephemeris'].get(prn)
+            if rec:
+                resp[key] = {
+                    'msg_type':     rec['msg_type'],
+                    'toc':          rec['epoch'],
+                    'gal_week':     rec['gal_week'],
+                    'iodnav':       rec['iodnav'],
+                    'data_sources': rec['data_sources'],
+                    'sisa':         rec['sisa'],
+                    'sv_health':    rec['sv_health'],
+                    'bgd_e5a_e1':   rec['bgd_e5a_e1'],
+                    'bgd_e5b_e1':   rec['bgd_e5b_e1'],
+                    'af0':          rec['af0'],
+                    'af1':          rec['af1'],
+                    'af2':          rec['af2'],
+                    'toe':          rec['toe'],
+                    'sqrt_a':       rec['sqrt_a'],
+                    'e':            rec['e'],
+                    'm0_deg':       math.degrees(rec['m0']),
+                    'delta_n':      rec['delta_n'],
+                    'crs':          rec['crs'],
+                    'cus':          rec['cus'],
+                    'cuc':          rec['cuc'],
+                    'omega0_deg':   math.degrees(rec['omega0']),
+                    'i0_deg':       math.degrees(rec['i0']),
+                    'omega_deg':    math.degrees(rec['omega']),
+                    'omega_dot':    rec['omega_dot'],
+                    'idot':         rec['idot'],
+                    'crc':          rec['crc'],
+                    'cic':          rec['cic'],
+                    'cis':          rec['cis'],
+                    'tx_time':      rec['tx_time'],
+                    'rinex_date':   src_data['date'],
+                }
     return jsonify(resp)
 
 
@@ -502,6 +554,8 @@ def rinex_status():
         'cnav':  {'loaded': bool(rinex4_data['ephemeris']),   'date': rinex4_data['date'],   'prns': len(rinex4_data['ephemeris'])},
         'bds_d':    {'loaded': bool(bei_d_data['ephemeris']),    'date': bei_d_data['date'],    'prns': len(bei_d_data['ephemeris'])},
         'bds_cnv1': {'loaded': bool(bei_cnv1_data['ephemeris']), 'date': bei_cnv1_data['date'], 'prns': len(bei_cnv1_data['ephemeris'])},
+        'gal_inav': {'loaded': bool(gal_inav_data['ephemeris']), 'date': gal_inav_data['date'], 'prns': len(gal_inav_data['ephemeris'])},
+        'gal_fnav': {'loaded': bool(gal_fnav_data['ephemeris']), 'date': gal_fnav_data['date'], 'prns': len(gal_fnav_data['ephemeris'])},
     })
 
 

@@ -1051,6 +1051,62 @@ function buildSatDetailHtml(data, sat, rangeKm, elev, az) {
         html += '</div>';
     }
 
+    function renderGalileoBlock(g, signalLabel, anchorId, includeBgdE5b) {
+        let h = '<div class="sd-section" id="' + anchorId + '"><h4>BROADCAST EPHEMERIS — ' + signalLabel + '</h4>';
+        h += '<div class="sd-sub">Clock &amp; Status</div>';
+        h += sdRow('toc (UTC)',     g.toc);
+        h += sdRow('GAL Week',      g.gal_week);
+        h += sdRow('IODnav',        g.iodnav);
+        h += sdRow('Data sources',  '0x' + g.data_sources.toString(16).toUpperCase() + ' (' + g.data_sources + ')');
+        h += sdRow('SISA',          g.sisa.toFixed(2) + ' m');
+        h += sdRow('SV health',     g.sv_health === 0
+            ? '<span style="color:#00ff88">0 — Healthy</span>'
+            : '<span style="color:#ff5555">' + g.sv_health + ' — Unhealthy</span>');
+        h += sdRow('BGD E5a/E1',    g.bgd_e5a_e1.toExponential(3) + ' s');
+        if (includeBgdE5b) {
+            h += sdRow('BGD E5b/E1', g.bgd_e5b_e1.toExponential(3) + ' s');
+        }
+        h += sdRow('af₀',           g.af0.toExponential(3) + ' s');
+        h += sdRow('af₁',           g.af1.toExponential(3) + ' s/s');
+        h += sdRow('af₂',           g.af2.toExponential(3) + ' s/s²');
+        h += '<div class="sd-sub">Ephemeris I</div>';
+        h += sdRow('ToE',           g.toe.toFixed(0) + ' s');
+        h += sdRow('√A',            g.sqrt_a.toFixed(3) + ' m½');
+        h += sdRow('e',             g.e.toFixed(10));
+        h += sdRow('M₀',            g.m0_deg.toFixed(6) + '°');
+        h += sdRow('Δn',            g.delta_n.toExponential(3) + ' rad/s');
+        h += sdRow('Cus',           g.cus.toExponential(3) + ' rad');
+        h += sdRow('Cuc',           g.cuc.toExponential(3) + ' rad');
+        h += sdRow('Crs',           g.crs.toFixed(4) + ' m');
+        h += '<div class="sd-sub">Ephemeris II</div>';
+        h += sdRow('Ω₀',            g.omega0_deg.toFixed(6) + '°');
+        h += sdRow('i₀',            g.i0_deg.toFixed(6) + '°');
+        h += sdRow('ω',             g.omega_deg.toFixed(6) + '°');
+        h += sdRow('dΩ/dt',         g.omega_dot.toExponential(3) + ' rad/s');
+        h += sdRow('IDOT',          g.idot.toExponential(3) + ' rad/s');
+        h += sdRow('Crc',           g.crc.toFixed(4) + ' m');
+        h += sdRow('Cic',           g.cic.toExponential(3) + ' rad');
+        h += sdRow('Cis',           g.cis.toExponential(3) + ' rad');
+        h += sdRow('Tx time',       g.tx_time.toFixed(0) + ' s');
+        h += sdRow('Source',        'RINEX4 ' + g.rinex_date);
+        h += '</div>';
+        return h;
+    }
+
+    if (data.galileo_inav) {
+        html += renderGalileoBlock(data.galileo_inav, 'I/NAV (E1-B / E5b-I)', 'sd-gal-inav', true);
+    } else if (sat.constellation === 'GALILEO') {
+        html += '<div class="sd-section" id="sd-gal-inav"><h4>BROADCAST EPHEMERIS — I/NAV (E1-B / E5b-I)</h4>' +
+            '<div class="sd-pending">RINEX-4 data loading from BKG — auto-refreshing…</div></div>';
+    }
+
+    if (data.galileo_fnav) {
+        html += renderGalileoBlock(data.galileo_fnav, 'F/NAV (E5a-I)', 'sd-gal-fnav', false);
+    } else if (sat.constellation === 'GALILEO') {
+        html += '<div class="sd-section" id="sd-gal-fnav"><h4>BROADCAST EPHEMERIS — F/NAV (E5a-I)</h4>' +
+            '<div class="sd-pending">RINEX-4 data loading from BKG — auto-refreshing…</div></div>';
+    }
+
     if (data.tle) {
         html += '<div class="sd-section"><h4>TLE EPHEMERIS</h4>';
         html += sdRow('Name', data.tle.name);
