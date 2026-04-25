@@ -225,6 +225,45 @@ def parse_rinex2_nav(text):
     return result
 
 
+_SATNOGS_NAME_FILTER = {
+    'glo-ops': 'COSMOS 2',
+    'beidou':  'BEIDOU',
+    'galileo': 'GSAT0',
+}
+
+
+def _fetch_tle_satnogs(group):
+    """SatNOGS DB public API — fallback when Celestrak is unavailable."""
+    name_contains = _SATNOGS_NAME_FILTER.get(group.lower())
+    if not name_contains:
+        return None
+    import urllib.parse
+    url = (f'https://db.satnogs.org/api/tle/?format=json&page_size=500'
+           f'&tle0__icontains={urllib.parse.quote(name_contains)}')
+    try:
+        r = requests.get(url, timeout=25,
+                         headers={'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0'})
+        if r.status_code != 200:
+            log.warning(f"_fetch_tle_satnogs({group}): HTTP {r.status_code}")
+            return None
+        data = r.json()
+        entries = data.get('results', data) if isinstance(data, dict) else data
+        lines = []
+        for e in entries:
+            n  = str(e.get('tle0', '')).strip()
+            l1 = str(e.get('tle1', '')).strip()
+            l2 = str(e.get('tle2', '')).strip()
+            if l1.startswith('1 ') and l2.startswith('2 '):
+                lines.extend([n, l1, l2])
+        if lines:
+            log.info(f"_fetch_tle_satnogs({group}): {len(lines)//3} TLEs")
+            return '\n'.join(lines)
+        log.warning(f"_fetch_tle_satnogs({group}): no matches for '{name_contains}'")
+    except Exception as e:
+        log.warning(f"_fetch_tle_satnogs({group}): {type(e).__name__}: {e}")
+    return None
+
+
 def fetch_tle_group(group):
     urls = [
         f"https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=tle",
@@ -241,7 +280,7 @@ def fetch_tle_group(group):
     for url in urls:
         for verify in (True, False):
             try:
-                r = requests.get(url, timeout=20, headers=headers, verify=verify, allow_redirects=True)
+                r = requests.get(url, timeout=8, headers=headers, verify=verify, allow_redirects=True)
             except Exception as e:
                 log.warning(f"fetch_tle_group({group}) {url} verify={verify}: {type(e).__name__}: {e}")
                 continue
@@ -255,7 +294,8 @@ def fetch_tle_group(group):
                 return text
             snippet = text[:120].replace('\n', ' ')
             log.warning(f"fetch_tle_group({group}) {url} verify={verify}: unexpected body {snippet!r}")
-    return None
+    log.info(f"fetch_tle_group({group}): all Celestrak sources failed, trying SatNOGS")
+    return _fetch_tle_satnogs(group)
 
 
 def fetch_glonass_slot_map():

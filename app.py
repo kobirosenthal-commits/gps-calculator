@@ -5,6 +5,7 @@ from gps_core import (fetch_almanac, parse_yuma, propagate, geodetic, gps_time_f
                       fetch_gps_rinex, parse_rinex2_nav,
                       fetch_gps_rinex4, parse_rinex4_nav)
 import logging
+log = logging.getLogger(__name__)
 import math
 import re
 import threading
@@ -409,27 +410,14 @@ def rinex_status():
 
 @app.route('/api/fetch-tles', methods=['POST'])
 def fetch_tles_proxy():
-    """Server-side Celestrak proxy — browser calls this first so Render's IP makes
-    the outbound request instead of the browser, avoiding Celestrak's CORS/403 blocks."""
-    global glo_data, bei_data, gal_data
+    """Return already-cached TLE data loaded by the background thread.
+    Never makes outbound network calls — avoids Render's 30s request timeout."""
     payload = request.json or {}
     constellation = payload.get('constellation', '').upper()
-    group = payload.get('group', '')
-    prefix = {'GLONASS': 'R', 'BEIDOU': 'C', 'GALILEO': 'E'}.get(constellation)
-    if not prefix or not group:
-        return jsonify({'success': False, 'error': 'invalid request'}), 400
-    tles = _load_tle_constellation(group, prefix)
-    if not tles:
-        return jsonify({'success': False, 'error': 'fetch failed'}), 503
-    entry = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime('%Y-%m-%d')}
-    if constellation == 'GLONASS':
-        glo_data = entry
-    elif constellation == 'BEIDOU':
-        bei_data = entry
-    else:
-        gal_data = entry
-    app.logger.info(f"fetch-tles proxy: loaded {len(tles)} {constellation} TLEs")
-    return jsonify({'success': True, 'count': len(tles)})
+    cache = {'GLONASS': glo_data, 'BEIDOU': bei_data, 'GALILEO': gal_data}.get(constellation)
+    if cache and cache.get('tles'):
+        return jsonify({'success': True, 'count': len(cache['tles'])})
+    return jsonify({'success': False, 'error': 'not yet loaded — background thread still fetching'}), 503
 
 
 @app.route('/api/push-tles', methods=['POST'])

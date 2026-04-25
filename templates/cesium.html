@@ -1290,23 +1290,42 @@ async function pushTLEsFromBrowser(group, constellation) {
     return false;
 }
 
+const _tleLoaded = { GLONASS: false, BEIDOU: false, GALILEO: false };
+
 async function bootstrapTLEs() {
-    await Promise.all([
-        pushTLEsFromBrowser('glo-ops', 'GLONASS'),
-        pushTLEsFromBrowser('beidou',  'BEIDOU'),
-        pushTLEsFromBrowser('galileo', 'GALILEO'),
-    ]);
+    const jobs = [
+        { group: 'glo-ops', constellation: 'GLONASS' },
+        { group: 'beidou',  constellation: 'BEIDOU'  },
+        { group: 'galileo', constellation: 'GALILEO' },
+    ].filter(j => !_tleLoaded[j.constellation]);
+
+    if (!jobs.length) return;
+
+    const results = await Promise.all(jobs.map(j =>
+        pushTLEsFromBrowser(j.group, j.constellation).then(ok => {
+            if (ok) _tleLoaded[j.constellation] = true;
+            return ok;
+        })
+    ));
+
+    // If any constellation still missing, retry in 30s (background thread may still be fetching)
+    if (results.some(r => !r)) {
+        setTimeout(bootstrapTLEs, 30000);
+    }
 }
 
-// Kick off TLE push, then start live position polling. The polling
-// doesn't wait for the push to finish — GPS sats appear immediately,
-// and GLO/BDS/GAL join within a few seconds.
+// Kick off TLE loading, then start live position polling.
+// GPS uses NOAA almanac so it appears immediately; GLO/BDS/GAL retry until the
+// server background thread finishes fetching (Celestrak or SatNOGS fallback).
 bootstrapTLEs();
 fetchLive();
 setInterval(fetchLive, 5000);
 
-// Refresh TLE cache every 6 hours from the browser so the server stays current.
-setInterval(bootstrapTLEs, 6 * 3600 * 1000);
+// Full refresh every 6 hours
+setInterval(() => {
+    Object.keys(_tleLoaded).forEach(k => _tleLoaded[k] = false);
+    bootstrapTLEs();
+}, 6 * 3600 * 1000);
 </script>
 </body>
 </html>
