@@ -270,9 +270,14 @@ def _fetch_tle_satnogs(group):
     return None
 
 
+_GITHUB_RAW = "https://raw.githubusercontent.com/kobirosenthal-commits/gps-calculator/main/data/{group}.tle"
+
+
 def fetch_tle_group(group):
-    # Two Celestrak URLs with short timeout — fail fast so SatNOGS fallback runs quickly
     urls = [
+        # GitHub raw — updated by Actions workflow every 6h, always reachable from Render
+        _GITHUB_RAW.format(group=group),
+        # Celestrak as fallback (may be blocked from cloud IPs)
         f"https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=tle",
         f"https://celestrak.com/NORAD/elements/{group}.txt",
     ]
@@ -284,7 +289,7 @@ def fetch_tle_group(group):
     }
     for url in urls:
         try:
-            r = requests.get(url, timeout=5, headers=headers, verify=False, allow_redirects=True)
+            r = requests.get(url, timeout=10, headers=headers, verify=False, allow_redirects=True)
         except Exception as e:
             log.warning(f"fetch_tle_group({group}) {url}: {type(e).__name__}: {e}")
             continue
@@ -295,8 +300,8 @@ def fetch_tle_group(group):
         if '1 ' in text and not text.lstrip().lower().startswith('no gp'):
             log.info(f"fetch_tle_group({group}) OK via {url} ({len(text)} bytes)")
             return text
-        log.warning(f"fetch_tle_group({group}) {url}: unexpected body")
-    log.info(f"fetch_tle_group({group}): Celestrak unavailable, trying SatNOGS")
+        log.warning(f"fetch_tle_group({group}) {url}: no valid TLEs in response")
+    log.info(f"fetch_tle_group({group}): all primary sources failed, trying SatNOGS")
     return _fetch_tle_satnogs(group)
 
 
