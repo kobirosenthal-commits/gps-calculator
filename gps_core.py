@@ -5,9 +5,30 @@ import requests.packages.urllib3
 requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
 import logging
 import math
+import os
 import re
 
 log = logging.getLogger(__name__)
+
+_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+
+
+def _read_cached_rinex(filename):
+    """Return cached RINEX text from data/ if present and well-formed, else None.
+
+    The update-tles GitHub Action keeps these files fresh every 6h, which lets
+    Render serve RINEX without depending on its (often blocked) outbound network.
+    """
+    path = os.path.join(_DATA_DIR, filename)
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            text = f.read()
+    except OSError:
+        return None
+    if 'END OF HEADER' not in text:
+        return None
+    log.info(f"RINEX cache hit: {path} ({len(text)} bytes)")
+    return text
 
 MU = 3.986005e14
 OMEGA_E = 7.2921151467e-5
@@ -136,6 +157,9 @@ def _fortran_float(s):
 
 def fetch_gps_rinex(dt):
     """Fetch GPS RINEX 2.x broadcast nav file for date dt. Returns text or None."""
+    cached = _read_cached_rinex('gps_rinex2.txt')
+    if cached:
+        return cached
     import gzip as gz
     doy = dt.timetuple().tm_yday
     yy = dt.year % 100
@@ -376,6 +400,9 @@ def propagate_tle(tle, dt):
 
 def fetch_gps_rinex4(dt):
     """Fetch RINEX 4 multi-GNSS broadcast nav for date dt from BKG. Returns text or None."""
+    cached = _read_cached_rinex('gps_rinex4.txt')
+    if cached:
+        return cached
     import gzip as gz
     doy = dt.timetuple().tm_yday
     yyyy = dt.year

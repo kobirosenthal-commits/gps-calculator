@@ -1,4 +1,4 @@
-name: Update TLEs
+name: Update TLEs and RINEX
 
 on:
   schedule:
@@ -29,11 +29,65 @@ jobs:
             || echo "WARNING: galileo fetch failed"
           wc -l data/*.tle
 
+      - name: Fetch RINEX 2 GPS LNAV (NOAA)
+        run: |
+          python3 - <<'PY'
+          import urllib.request, gzip, datetime, os, sys
+          os.makedirs('data', exist_ok=True)
+          for offset in range(0, 3):
+              dt = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=offset)
+              doy = dt.timetuple().tm_yday
+              yy = dt.year % 100
+              yyyy = dt.year
+              urls = [
+                  f"https://noaa-cors-pds.s3.amazonaws.com/rinex/{yyyy}/{doy:03d}/brdc{doy:03d}0.{yy:02d}n.gz",
+                  f"https://geodesy.noaa.gov/corsdata/rinex/{yyyy}/{doy:03d}/brdc{doy:03d}0.{yy:02d}n.gz",
+              ]
+              for url in urls:
+                  try:
+                      req = urllib.request.Request(url, headers={'User-Agent': 'gps-calculator-bot'})
+                      with urllib.request.urlopen(req, timeout=60) as r:
+                          if r.status != 200: continue
+                          text = gzip.decompress(r.read()).decode('utf-8', errors='replace')
+                      if 'END OF HEADER' in text:
+                          with open('data/gps_rinex2.txt', 'w', encoding='utf-8') as f: f.write(text)
+                          print(f"OK: {url} ({len(text)} bytes)")
+                          sys.exit(0)
+                  except Exception as e:
+                      print(f"FAIL {url}: {e}")
+          print("WARNING: rinex2 fetch failed — keeping previous file")
+          PY
+
+      - name: Fetch RINEX 4 multi-GNSS CNAV (BKG)
+        run: |
+          python3 - <<'PY'
+          import urllib.request, gzip, datetime, os, sys
+          os.makedirs('data', exist_ok=True)
+          for offset in range(1, 5):
+              dt = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=offset)
+              doy = dt.timetuple().tm_yday
+              yyyy = dt.year
+              url = (f"https://igs.bkg.bund.de/root_ftp/IGS/BRDC/{yyyy}/{doy:03d}/"
+                     f"BRD400DLR_S_{yyyy}{doy:03d}0000_01D_MN.rnx.gz")
+              try:
+                  req = urllib.request.Request(url, headers={'User-Agent': 'gps-calculator-bot'})
+                  with urllib.request.urlopen(req, timeout=120) as r:
+                      if r.status != 200: continue
+                      text = gzip.decompress(r.read()).decode('utf-8', errors='replace')
+                  if 'END OF HEADER' in text:
+                      with open('data/gps_rinex4.txt', 'w', encoding='utf-8') as f: f.write(text)
+                      print(f"OK: {url} ({len(text)} bytes)")
+                      sys.exit(0)
+              except Exception as e:
+                  print(f"FAIL {url}: {e}")
+          print("WARNING: rinex4 fetch failed — keeping previous file")
+          PY
+
       - name: Commit and push
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git add data/
           git diff --staged --quiet \
-            && echo "No TLE changes" \
-            || git commit -m "chore: update TLE data $(date -u +%Y-%m-%dT%H:%M)Z" && git push
+            && echo "No data changes" \
+            || git commit -m "chore: update TLE/RINEX data $(date -u +%Y-%m-%dT%H:%M)Z" && git push
