@@ -1368,7 +1368,10 @@ function toggle2D() {
     document.getElementById('cesiumContainer').style.display = view2D ? 'none' : '';
     document.getElementById('sky-canvas').style.display = view2D ? 'block' : 'none';
     document.getElementById('zoom-ctrl').style.display = view2D ? 'none' : '';
-    if (view2D && lastSatellites.length) drawSkyPlot(lastSatellites);
+    if (view2D) {
+        mobClose();  // close any open mobile bottom sheet before drawing
+        if (lastSatellites.length) drawSkyPlot(lastSatellites);
+    }
 }
 
 function azelFromEcef(recv, satX, satY, satZ) {
@@ -1400,9 +1403,13 @@ function drawSkyPlot(satellites) {
     const ctx = canvas.getContext('2d');
     ctx.scale(dpr, dpr);
     const W = window.innerWidth, H = window.innerHeight;
+    const topOffset    = document.getElementById('topbar').getBoundingClientRect().height;
+    const mobBarEl     = document.getElementById('mob-bar');
+    const bottomOffset = (mobBarEl && getComputedStyle(mobBarEl).display !== 'none') ? mobBarEl.offsetHeight : 0;
+    const drawH = H - topOffset - bottomOffset;
     const cx = W / 2;
-    const cy = H / 2;
-    const R  = Math.min(W, H) * 0.42;
+    const cy = topOffset + drawH / 2;
+    const R  = Math.min(W, drawH) * 0.42;
 
     ctx.fillStyle = '#000008';
     ctx.fillRect(0, 0, W, H);
