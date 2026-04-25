@@ -1353,7 +1353,7 @@ document.getElementById('sky-canvas').addEventListener('click', function(e) {
         const d = Math.hypot(mx - sx, my - sy);
         if (d < bestD) { bestD = d; best = sat; }
     }
-    if (best) openSatPage(best);
+    if (best) { mobClose(); openSatPage(best); }
 });
 
 // ── 2D Sky Plot ───────────────────────────────────────────────────────
