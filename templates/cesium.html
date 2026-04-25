@@ -164,6 +164,12 @@
         .sp-row .sp-info { color: #5599cc; font-size: 0.76em; white-space: nowrap; }
         #sp-sidebar::-webkit-scrollbar { width: 3px; }
         #sp-sidebar::-webkit-scrollbar-thumb { background: #1a3a5c; }
+        #sp-const-bar {
+            display: flex; gap: 8px; padding: 8px 20px; flex-shrink: 0;
+            border-bottom: 1px solid #1a3a5c; background: rgba(0,0,15,0.98);
+        }
+        .sp-tog-all { color: #aaaacc; border-color: #aaaacc; background: rgba(170,170,204,0.08); }
+        .sp-tog-all.active { background: rgba(170,170,204,0.18); }
         #sp-content {
             flex: 1; overflow-y: auto; padding: 18px 22px;
             display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; align-content: start;
@@ -268,6 +274,13 @@
         <button id="sp-nav-prev" class="sp-nav-btn" onclick="navSat(-1)" disabled>‹ Prev</button>
         <span id="sp-nav-pos"></span>
         <button id="sp-nav-next" class="sp-nav-btn" onclick="navSat(1)" disabled>Next ›</button>
+    </div>
+    <div id="sp-const-bar">
+        <button class="tog-btn sp-tog-all sp-c-btn active" data-c="ALL"     onclick="setSpConstFilter('ALL')">ALL</button>
+        <button class="tog-btn tog-gps   sp-c-btn"         data-c="GPS"     onclick="setSpConstFilter('GPS')">GPS</button>
+        <button class="tog-btn tog-glo   sp-c-btn"         data-c="GLONASS" onclick="setSpConstFilter('GLONASS')">GLO</button>
+        <button class="tog-btn tog-bei   sp-c-btn"         data-c="BEIDOU"  onclick="setSpConstFilter('BEIDOU')">BDS</button>
+        <button class="tog-btn tog-gal   sp-c-btn"         data-c="GALILEO" onclick="setSpConstFilter('GALILEO')">GAL</button>
     </div>
     <div id="sp-main">
         <div id="sp-sidebar">
@@ -963,9 +976,22 @@ function buildSatDetailHtml(data, sat, rangeKm, elev, az) {
 // ── Full-page satellite detail ────────────────────────────────────────
 let spSatList  = [];   // [{label, infoText, sat}] — ordered list for nav
 let spCurrentIdx = 0;
+let spConstFilter = 'ALL';
+
+function setSpConstFilter(c) {
+    spConstFilter = c;
+    document.querySelectorAll('.sp-c-btn').forEach(b =>
+        b.classList.toggle('active', b.getAttribute('data-c') === c));
+    const currentLabel = document.getElementById('sp-sat-label').textContent;
+    spSatList = buildSpList();
+    if (!spSatList.find(s => s.label === currentLabel)) spCurrentIdx = 0;
+    renderSpSidebar(currentLabel);
+    renderSpNav(currentLabel);
+}
 
 function buildSpList() {
-    const sats = lastSatellites.filter(s => enabledConst[s.constellation]);
+    let sats = lastSatellites.filter(s => enabledConst[s.constellation]);
+    if (spConstFilter !== 'ALL') sats = sats.filter(s => s.constellation === spConstFilter);
     if (receiver) {
         const mask = elevMask();
         return sats
@@ -1051,6 +1077,9 @@ function loadSpContent(sat) {
 }
 
 function openSatPage(sat) {
+    spConstFilter = 'ALL';
+    document.querySelectorAll('.sp-c-btn').forEach(b =>
+        b.classList.toggle('active', b.getAttribute('data-c') === 'ALL'));
     spSatList = buildSpList();
     if (!spSatList.find(s => s.label === sat.label)) {
         spSatList.unshift({ label: sat.label, infoText: '', sat });
