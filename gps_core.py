@@ -233,9 +233,10 @@ def fetch_tle_group(group):
         f"https://www.celestrak.com/NORAD/elements/{group}.txt",
     ]
     headers = {
-        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept': 'text/plain,text/*,*/*',
         'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://celestrak.org/NORAD/elements/',
     }
     for url in urls:
         for verify in (True, False):
