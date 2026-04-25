@@ -1419,18 +1419,18 @@ function drawSkyPlot(satellites) {
         const r = R * (90 - elDeg) / 90;
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(80,130,220,0.3)';
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = elDeg === 0 ? 'rgba(100,160,255,0.75)' : 'rgba(100,160,255,0.45)';
+        ctx.lineWidth = elDeg === 0 ? 1.5 : 1;
         ctx.stroke();
-        ctx.fillStyle = '#3a5a88';
-        ctx.font = '11px sans-serif';
+        ctx.fillStyle = '#7aaedd';
+        ctx.font = '12px sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(elDeg + '°', cx + r + 4, cy);
+        ctx.fillText(elDeg + '°', cx + r + 5, cy);
     }
 
     // Azimuth spokes every 45°
-    ctx.strokeStyle = 'rgba(80,130,220,0.18)';
+    ctx.strokeStyle = 'rgba(100,160,255,0.3)';
     ctx.lineWidth = 1;
     for (let a = 0; a < 360; a += 45) {
         const rad = a * Math.PI / 180;
