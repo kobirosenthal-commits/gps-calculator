@@ -73,34 +73,37 @@ def _load_tle_constellation(group, label_prefix):
         return None
 
 
+def _load_one_constellation(group, prefix, target):
+    """Load a single constellation; returns (target, entry_or_None)."""
+    try:
+        tles = _load_tle_constellation(group, prefix)
+        if tles:
+            entry = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
+            app.logger.info(f"TLE refresh: loaded {len(tles)} {target} satellites")
+            return target, entry
+        app.logger.warning(f"TLE refresh: failed to load {target}")
+    except Exception as e:
+        app.logger.warning(f"TLE refresh: exception loading {target}: {e}")
+    return target, None
+
+
 def _tle_refresh_worker():
-    """Background thread that refreshes TLE constellations without blocking requests."""
+    """Background thread: fetches all 3 non-GPS constellations in parallel."""
     global glo_data, bei_data, gal_data
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     while True:
+        jobs = [('glo-ops', 'R', 'glo'), ('beidou', 'C', 'bei'), ('galileo', 'E', 'gal')]
         all_ok = True
-        for group, prefix, target in (
-            ('glo-ops',  'R', 'glo'),
-            ('beidou',   'C', 'bei'),
-            ('galileo',  'E', 'gal'),
-        ):
-            try:
-                tles = _load_tle_constellation(group, prefix)
-                if tles:
-                    entry = {'tles': tles, 'fetched': datetime.now(timezone.utc).strftime("%Y-%m-%d")}
-                    if target == 'glo':
-                        glo_data = entry
-                    elif target == 'bei':
-                        bei_data = entry
-                    else:
-                        gal_data = entry
-                    app.logger.info(f"TLE refresh: loaded {len(tles)} {target} satellites")
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            futures = {ex.submit(_load_one_constellation, *j): j for j in jobs}
+            for f in as_completed(futures):
+                target, entry = f.result()
+                if entry:
+                    if target == 'glo':   glo_data = entry
+                    elif target == 'bei': bei_data = entry
+                    else:                 gal_data = entry
                 else:
                     all_ok = False
-                    app.logger.warning(f"TLE refresh: failed to load {target}")
-            except Exception as e:
-                all_ok = False
-                app.logger.warning(f"TLE refresh: exception loading {target}: {e}")
-        # If everything loaded, refresh every 6h; otherwise retry in 2 minutes
         time.sleep(6 * 3600 if all_ok else 120)
 
 
