@@ -154,25 +154,76 @@ def _rss_mb():
     return None
 
 
+def _load_rinex4_json(filename):
+    """Load a pre-parsed RINEX 4 JSON committed by the update-tles workflow.
+    Returns {'ephemeris': {prn(int): record}, 'date': str} or None."""
+    import json, os
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', filename)
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            blob = json.load(f)
+    except (OSError, ValueError):
+        return None
+    eph_str = blob.get('ephemeris') or {}
+    eph = {int(k): v for k, v in eph_str.items()}
+    return {'ephemeris': eph, 'date': blob.get('date')}
+
+
 def _rinex4_refresh_worker():
-    """Single-pass streaming worker for the multi-GNSS RINEX 4 file. Parses GPS CNAV,
-    BeiDou D1/D2 + B-CNAV1, and Galileo I/NAV + F/NAV in one pass without ever
-    holding the full 12 MB file in memory — the load-then-splitlines pattern OOMs
-    on Render's free tier."""
+    """Load pre-parsed RINEX 4 JSON files committed every 6 h by GitHub Actions.
+    Parsing the 12 MB raw file inside this process took 30+ minutes on Render's
+    free tier — far longer than the spin-down window — so the constellations
+    never appeared. The workflow now does the parse in CI and writes small JSONs
+    that load in milliseconds. Falls back to streaming the raw file if the
+    JSONs are absent (first deploy after this change, or workflow failure)."""
     global rinex4_data, bei_d_data, bei_cnv1_data, gal_inav_data, gal_fnav_data, rinex4_diag
     import os, traceback
     rinex4_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'gps_rinex4.txt')
+    json_targets = [
+        ('rinex4_gps_cnav.json', 'rinex4_data',    'GPS CNAV'),
+        ('rinex4_bds_d.json',    'bei_d_data',     'BeiDou D1/D2'),
+        ('rinex4_bds_cnv1.json', 'bei_cnv1_data',  'BeiDou CNV1'),
+        ('rinex4_gal_inav.json', 'gal_inav_data',  'Galileo I/NAV'),
+        ('rinex4_gal_fnav.json', 'gal_fnav_data',  'Galileo F/NAV'),
+    ]
     while True:
         loaded = False
         rinex4_diag['attempts'] += 1
-        rinex4_diag['stage'] = 'stat'
+        rinex4_diag['stage'] = 'load_json'
         rinex4_diag['rss_mb'] = _rss_mb()
         try:
             rinex4_diag['file_exists'] = os.path.exists(rinex4_path)
             rinex4_diag['file_size'] = os.path.getsize(rinex4_path) if rinex4_diag['file_exists'] else None
         except Exception as e:
             rinex4_diag['last_error'] = f"stat: {type(e).__name__}: {e}"
-        # BKG RINEX 4 files are typically available with ~1 day delay; try yesterday first
+
+        counts = {}
+        for fname, varname, label in json_targets:
+            try:
+                blob = _load_rinex4_json(fname)
+                if blob and blob['ephemeris']:
+                    globals()[varname] = blob
+                    counts[varname] = len(blob['ephemeris'])
+                    app.logger.info(f"RINEX4 JSON loaded: {len(blob['ephemeris'])} {label} PRNs from {blob['date']}")
+                    loaded = True
+                else:
+                    counts[varname] = 0
+            except Exception as e:
+                tb = traceback.format_exc(limit=3)
+                rinex4_diag['last_error'] = f"json {fname}: {type(e).__name__}: {e}\n{tb}"
+                app.logger.warning(f"RINEX4 JSON load error {fname}: {e}")
+        rinex4_diag['parsed_counts'] = counts
+        rinex4_diag['rss_mb'] = _rss_mb()
+
+        if loaded:
+            rinex4_diag['stage'] = 'done'
+            rinex4_diag['last_error'] = None
+            time.sleep(6 * 3600)
+            continue
+
+        # JSONs missing — fall back to streaming the raw RINEX 4 file. On Render's
+        # free tier this is too slow to actually finish, but locally and on
+        # capable hosts it works.
         for offset in range(1, 4):
             dt = datetime.now(timezone.utc) - timedelta(days=offset)
             try:
@@ -184,36 +235,25 @@ def _rinex4_refresh_worker():
                 rinex4_diag['stage'] = 'assign'
                 rinex4_diag['parsed_counts'] = {
                     'gps_cnav': len(parsed['gps_cnav']),
-                    'bds_d': len(parsed['bds_d']),
+                    'bds_d':    len(parsed['bds_d']),
                     'bds_cnv1': len(parsed['bds_cnv1']),
                     'gal_inav': len(parsed['gal_inav']),
                     'gal_fnav': len(parsed['gal_fnav']),
                 }
                 if parsed['gps_cnav']:
-                    rinex4_data = {'ephemeris': parsed['gps_cnav'], 'date': date_str}
-                    app.logger.info(f"RINEX4 loaded: {len(parsed['gps_cnav'])} GPS CNAV PRNs from {date_str}")
-                    loaded = True
+                    rinex4_data = {'ephemeris': parsed['gps_cnav'], 'date': date_str}; loaded = True
                 if parsed['bds_d']:
-                    bei_d_data = {'ephemeris': parsed['bds_d'], 'date': date_str}
-                    app.logger.info(f"RINEX4 loaded: {len(parsed['bds_d'])} BeiDou D1/D2 PRNs from {date_str}")
-                    loaded = True
+                    bei_d_data = {'ephemeris': parsed['bds_d'], 'date': date_str}; loaded = True
                 if parsed['bds_cnv1']:
-                    bei_cnv1_data = {'ephemeris': parsed['bds_cnv1'], 'date': date_str}
-                    app.logger.info(f"RINEX4 loaded: {len(parsed['bds_cnv1'])} BeiDou CNV1 PRNs from {date_str}")
-                    loaded = True
+                    bei_cnv1_data = {'ephemeris': parsed['bds_cnv1'], 'date': date_str}; loaded = True
                 if parsed['gal_inav']:
-                    gal_inav_data = {'ephemeris': parsed['gal_inav'], 'date': date_str}
-                    app.logger.info(f"RINEX4 loaded: {len(parsed['gal_inav'])} Galileo I/NAV PRNs from {date_str}")
-                    loaded = True
+                    gal_inav_data = {'ephemeris': parsed['gal_inav'], 'date': date_str}; loaded = True
                 if parsed['gal_fnav']:
-                    gal_fnav_data = {'ephemeris': parsed['gal_fnav'], 'date': date_str}
-                    app.logger.info(f"RINEX4 loaded: {len(parsed['gal_fnav'])} Galileo F/NAV PRNs from {date_str}")
-                    loaded = True
+                    gal_fnav_data = {'ephemeris': parsed['gal_fnav'], 'date': date_str}; loaded = True
                 rinex4_diag['stage'] = 'done' if loaded else 'no_data'
                 if loaded:
                     rinex4_diag['last_error'] = None
                     break
-                rinex4_diag['last_error'] = f"streamed file but no ephemeris recovered for offset {offset}"
             except Exception as e:
                 tb = traceback.format_exc(limit=3)
                 rinex4_diag['last_error'] = f"{type(e).__name__}: {e}\n{tb}"
