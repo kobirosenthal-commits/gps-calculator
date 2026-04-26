@@ -138,26 +138,45 @@ def _rinex_refresh_worker():
 threading.Thread(target=_rinex_refresh_worker, daemon=True).start()
 
 
+rinex4_diag = {'last_error': None, 'file_size': None, 'file_exists': None,
+               'attempts': 0, 'parsed_counts': None}
+
+
 def _rinex4_refresh_worker():
     """Single worker for the multi-GNSS RINEX 4 file: parses GPS CNAV plus
     BeiDou D1/D2, BeiDou-3 CNV1, and Galileo I/NAV + F/NAV from the same source."""
-    global rinex4_data, bei_d_data, bei_cnv1_data, gal_inav_data, gal_fnav_data
+    global rinex4_data, bei_d_data, bei_cnv1_data, gal_inav_data, gal_fnav_data, rinex4_diag
+    import os, traceback
+    rinex4_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'gps_rinex4.txt')
     while True:
         loaded = False
+        rinex4_diag['attempts'] += 1
+        try:
+            rinex4_diag['file_exists'] = os.path.exists(rinex4_path)
+            rinex4_diag['file_size'] = os.path.getsize(rinex4_path) if rinex4_diag['file_exists'] else None
+        except Exception as e:
+            rinex4_diag['last_error'] = f"stat: {type(e).__name__}: {e}"
         # BKG RINEX 4 files are typically available with ~1 day delay; try yesterday first
         for offset in range(1, 4):
             dt = datetime.now(timezone.utc) - timedelta(days=offset)
             try:
                 text = fetch_gps_rinex4(dt)
                 if not text:
+                    rinex4_diag['last_error'] = f"fetch_gps_rinex4 returned None for offset {offset}"
                     continue
                 date_str = dt.strftime('%Y-%m-%d')
                 eph = parse_rinex4_nav(text)
+                bei = parse_rinex4_beidou(text)
+                gal = parse_rinex4_galileo(text)
+                rinex4_diag['parsed_counts'] = {
+                    'gps_cnav': len(eph), 'bds_d': len(bei['d']), 'bds_cnv1': len(bei['cnv1']),
+                    'gal_inav': len(gal['inav']), 'gal_fnav': len(gal['fnav']),
+                    'text_len': len(text),
+                }
                 if eph:
                     rinex4_data = {'ephemeris': eph, 'date': date_str}
                     app.logger.info(f"RINEX4 loaded: {len(eph)} GPS CNAV PRNs from {date_str}")
                     loaded = True
-                bei = parse_rinex4_beidou(text)
                 if bei['d']:
                     bei_d_data = {'ephemeris': bei['d'], 'date': date_str}
                     app.logger.info(f"RINEX4 loaded: {len(bei['d'])} BeiDou D1/D2 PRNs from {date_str}")
@@ -166,7 +185,6 @@ def _rinex4_refresh_worker():
                     bei_cnv1_data = {'ephemeris': bei['cnv1'], 'date': date_str}
                     app.logger.info(f"RINEX4 loaded: {len(bei['cnv1'])} BeiDou CNV1 PRNs from {date_str}")
                     loaded = True
-                gal = parse_rinex4_galileo(text)
                 if gal['inav']:
                     gal_inav_data = {'ephemeris': gal['inav'], 'date': date_str}
                     app.logger.info(f"RINEX4 loaded: {len(gal['inav'])} Galileo I/NAV PRNs from {date_str}")
@@ -176,9 +194,13 @@ def _rinex4_refresh_worker():
                     app.logger.info(f"RINEX4 loaded: {len(gal['fnav'])} Galileo F/NAV PRNs from {date_str}")
                     loaded = True
                 if loaded:
+                    rinex4_diag['last_error'] = None
                     break
+                rinex4_diag['last_error'] = f"parsed text but no ephemeris recovered for offset {offset}"
             except Exception as e:
-                app.logger.warning(f"RINEX4 refresh error: {e}")
+                tb = traceback.format_exc(limit=3)
+                rinex4_diag['last_error'] = f"{type(e).__name__}: {e}\n{tb}"
+                app.logger.warning(f"RINEX4 refresh error: {e}\n{tb}")
         time.sleep(6 * 3600 if loaded else 120)
 
 
@@ -556,6 +578,7 @@ def rinex_status():
         'bds_cnv1': {'loaded': bool(bei_cnv1_data['ephemeris']), 'date': bei_cnv1_data['date'], 'prns': len(bei_cnv1_data['ephemeris'])},
         'gal_inav': {'loaded': bool(gal_inav_data['ephemeris']), 'date': gal_inav_data['date'], 'prns': len(gal_inav_data['ephemeris'])},
         'gal_fnav': {'loaded': bool(gal_fnav_data['ephemeris']), 'date': gal_fnav_data['date'], 'prns': len(gal_fnav_data['ephemeris'])},
+        'rinex4_diag': rinex4_diag,
     })
 
 
