@@ -179,7 +179,7 @@ def _rinex4_refresh_worker():
                 rinex4_diag['stage'] = f'stream:offset{offset}'
                 rinex4_diag['rss_mb'] = _rss_mb()
                 date_str = dt.strftime('%Y-%m-%d')
-                parsed = parse_rinex4_combined(_rinex4_line_iter(dt))
+                parsed = parse_rinex4_combined(_rinex4_line_iter(dt), progress=rinex4_diag)
                 rinex4_diag['rss_mb'] = _rss_mb()
                 rinex4_diag['stage'] = 'assign'
                 rinex4_diag['parsed_counts'] = {

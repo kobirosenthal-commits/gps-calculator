@@ -492,15 +492,19 @@ def _read_record_from_iter(it, n_data_lines, epoch_line):
     }
 
 
-def parse_rinex4_combined(line_iter):
+def parse_rinex4_combined(line_iter, progress=None):
     """Single-pass streaming parser. Dispatches each EPH record by constellation+message
     type. Returns {'gps_cnav', 'bds_d', 'bds_cnv1', 'gal_inav', 'gal_fnav'} dicts.
 
     Avoids holding the full file text or a 178k-line list in memory — critical on
-    constrained hosts like Render free tier."""
+    constrained hosts like Render free tier. If `progress` is a dict, it gets
+    `lines_seen` and `eph_seen` updated every 5000 lines."""
     it = iter(line_iter)
+    line_count = 0
+    eph_count = 0
     # Skip header
     for line in it:
+        line_count += 1
         if 'END OF HEADER' in line:
             break
 
@@ -511,8 +515,13 @@ def parse_rinex4_combined(line_iter):
     gal_fnav = {}
 
     for ln in it:
+        line_count += 1
+        if progress is not None and line_count % 5000 == 0:
+            progress['lines_seen'] = line_count
+            progress['eph_seen'] = eph_count
         if not ln.startswith('> EPH '):
             continue
+        eph_count += 1
         parts = ln.split()
         if len(parts) < 4:
             continue
@@ -638,6 +647,9 @@ def parse_rinex4_combined(line_iter):
             if (not existing) or (week, toe) > (existing['gal_week'], existing['toe']):
                 target[prn] = record
 
+    if progress is not None:
+        progress['lines_seen'] = line_count
+        progress['eph_seen'] = eph_count
     return {
         'gps_cnav': gps_cnav,
         'bds_d': bds_d,
