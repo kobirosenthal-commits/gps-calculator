@@ -4,7 +4,7 @@ from gps_core import (fetch_almanac, parse_yuma, propagate, geodetic, gps_time_f
                       fetch_tle_group, parse_tles, propagate_tle, fetch_glonass_slot_map,
                       fetch_gps_rinex, parse_rinex2_nav,
                       fetch_gps_rinex4, parse_rinex4_nav, parse_rinex4_beidou,
-                      parse_rinex4_galileo)
+                      parse_rinex4_galileo, parse_rinex4_combined, _rinex4_line_iter)
 import logging
 log = logging.getLogger(__name__)
 import math
@@ -155,8 +155,10 @@ def _rss_mb():
 
 
 def _rinex4_refresh_worker():
-    """Single worker for the multi-GNSS RINEX 4 file: parses GPS CNAV plus
-    BeiDou D1/D2, BeiDou-3 CNV1, and Galileo I/NAV + F/NAV from the same source."""
+    """Single-pass streaming worker for the multi-GNSS RINEX 4 file. Parses GPS CNAV,
+    BeiDou D1/D2 + B-CNAV1, and Galileo I/NAV + F/NAV in one pass without ever
+    holding the full 12 MB file in memory — the load-then-splitlines pattern OOMs
+    on Render's free tier."""
     global rinex4_data, bei_d_data, bei_cnv1_data, gal_inav_data, gal_fnav_data, rinex4_diag
     import os, traceback
     rinex4_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'gps_rinex4.txt')
@@ -174,53 +176,44 @@ def _rinex4_refresh_worker():
         for offset in range(1, 4):
             dt = datetime.now(timezone.utc) - timedelta(days=offset)
             try:
-                rinex4_diag['stage'] = f'fetch:offset{offset}'
-                text = fetch_gps_rinex4(dt)
+                rinex4_diag['stage'] = f'stream:offset{offset}'
                 rinex4_diag['rss_mb'] = _rss_mb()
-                if not text:
-                    rinex4_diag['last_error'] = f"fetch_gps_rinex4 returned None for offset {offset}"
-                    continue
                 date_str = dt.strftime('%Y-%m-%d')
-                rinex4_diag['stage'] = 'parse_gps'
-                eph = parse_rinex4_nav(text)
-                rinex4_diag['rss_mb'] = _rss_mb()
-                rinex4_diag['stage'] = 'parse_bds'
-                bei = parse_rinex4_beidou(text)
-                rinex4_diag['rss_mb'] = _rss_mb()
-                rinex4_diag['stage'] = 'parse_gal'
-                gal = parse_rinex4_galileo(text)
+                parsed = parse_rinex4_combined(_rinex4_line_iter(dt))
                 rinex4_diag['rss_mb'] = _rss_mb()
                 rinex4_diag['stage'] = 'assign'
                 rinex4_diag['parsed_counts'] = {
-                    'gps_cnav': len(eph), 'bds_d': len(bei['d']), 'bds_cnv1': len(bei['cnv1']),
-                    'gal_inav': len(gal['inav']), 'gal_fnav': len(gal['fnav']),
-                    'text_len': len(text),
+                    'gps_cnav': len(parsed['gps_cnav']),
+                    'bds_d': len(parsed['bds_d']),
+                    'bds_cnv1': len(parsed['bds_cnv1']),
+                    'gal_inav': len(parsed['gal_inav']),
+                    'gal_fnav': len(parsed['gal_fnav']),
                 }
-                if eph:
-                    rinex4_data = {'ephemeris': eph, 'date': date_str}
-                    app.logger.info(f"RINEX4 loaded: {len(eph)} GPS CNAV PRNs from {date_str}")
+                if parsed['gps_cnav']:
+                    rinex4_data = {'ephemeris': parsed['gps_cnav'], 'date': date_str}
+                    app.logger.info(f"RINEX4 loaded: {len(parsed['gps_cnav'])} GPS CNAV PRNs from {date_str}")
                     loaded = True
-                if bei['d']:
-                    bei_d_data = {'ephemeris': bei['d'], 'date': date_str}
-                    app.logger.info(f"RINEX4 loaded: {len(bei['d'])} BeiDou D1/D2 PRNs from {date_str}")
+                if parsed['bds_d']:
+                    bei_d_data = {'ephemeris': parsed['bds_d'], 'date': date_str}
+                    app.logger.info(f"RINEX4 loaded: {len(parsed['bds_d'])} BeiDou D1/D2 PRNs from {date_str}")
                     loaded = True
-                if bei['cnv1']:
-                    bei_cnv1_data = {'ephemeris': bei['cnv1'], 'date': date_str}
-                    app.logger.info(f"RINEX4 loaded: {len(bei['cnv1'])} BeiDou CNV1 PRNs from {date_str}")
+                if parsed['bds_cnv1']:
+                    bei_cnv1_data = {'ephemeris': parsed['bds_cnv1'], 'date': date_str}
+                    app.logger.info(f"RINEX4 loaded: {len(parsed['bds_cnv1'])} BeiDou CNV1 PRNs from {date_str}")
                     loaded = True
-                if gal['inav']:
-                    gal_inav_data = {'ephemeris': gal['inav'], 'date': date_str}
-                    app.logger.info(f"RINEX4 loaded: {len(gal['inav'])} Galileo I/NAV PRNs from {date_str}")
+                if parsed['gal_inav']:
+                    gal_inav_data = {'ephemeris': parsed['gal_inav'], 'date': date_str}
+                    app.logger.info(f"RINEX4 loaded: {len(parsed['gal_inav'])} Galileo I/NAV PRNs from {date_str}")
                     loaded = True
-                if gal['fnav']:
-                    gal_fnav_data = {'ephemeris': gal['fnav'], 'date': date_str}
-                    app.logger.info(f"RINEX4 loaded: {len(gal['fnav'])} Galileo F/NAV PRNs from {date_str}")
+                if parsed['gal_fnav']:
+                    gal_fnav_data = {'ephemeris': parsed['gal_fnav'], 'date': date_str}
+                    app.logger.info(f"RINEX4 loaded: {len(parsed['gal_fnav'])} Galileo F/NAV PRNs from {date_str}")
                     loaded = True
                 rinex4_diag['stage'] = 'done' if loaded else 'no_data'
                 if loaded:
                     rinex4_diag['last_error'] = None
                     break
-                rinex4_diag['last_error'] = f"parsed text but no ephemeris recovered for offset {offset}"
+                rinex4_diag['last_error'] = f"streamed file but no ephemeris recovered for offset {offset}"
             except Exception as e:
                 tb = traceback.format_exc(limit=3)
                 rinex4_diag['last_error'] = f"{type(e).__name__}: {e}\n{tb}"

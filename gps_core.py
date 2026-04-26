@@ -425,6 +425,228 @@ def fetch_gps_rinex4(dt):
         return None
 
 
+def _rinex4_line_iter(dt):
+    """Yield lines from the cached RINEX 4 file, or fall back to a fresh BKG download.
+
+    Streams the cache directly off disk so the 12 MB+ file never lives in memory
+    as a single string — Render's free tier hits OOM on the load-then-splitlines
+    pattern even with one parse pass."""
+    path = os.path.join(_DATA_DIR, 'gps_rinex4.txt')
+    if os.path.exists(path):
+        try:
+            with open(path, 'r', encoding='utf-8', errors='replace') as f:
+                for line in f:
+                    yield line.rstrip('\r\n')
+            log.info(f"RINEX4 streaming cache hit: {path}")
+            return
+        except OSError as e:
+            log.warning(f"RINEX4 cache read error: {e}")
+    import gzip as gz
+    doy = dt.timetuple().tm_yday
+    yyyy = dt.year
+    url = (f"https://igs.bkg.bund.de/root_ftp/IGS/BRDC/{yyyy}/{doy:03d}/"
+           f"BRD400DLR_S_{yyyy}{doy:03d}0000_01D_MN.rnx.gz")
+    try:
+        r = requests.get(url, timeout=60)
+        if r.status_code != 200:
+            log.warning(f"_rinex4_line_iter {url}: HTTP {r.status_code}")
+            return
+        content = gz.decompress(r.content)
+        for line in content.decode('utf-8', errors='replace').splitlines():
+            yield line
+        log.info(f"_rinex4_line_iter network OK: {url}")
+    except Exception as e:
+        log.warning(f"_rinex4_line_iter {url}: {type(e).__name__}: {e}")
+
+
+def _read_record_from_iter(it, n_data_lines, epoch_line):
+    """Read one EPH record from a line iterator. Returns dict or None."""
+    el = epoch_line
+    try:
+        year   = int(el[4:8])
+        month  = int(el[9:11])
+        day    = int(el[12:14])
+        hour   = int(el[15:17])
+        minute = int(el[18:20])
+        af0    = float(el[23:42])
+        af1    = float(el[42:61])
+        af2    = float(el[61:80])
+    except (ValueError, IndexError):
+        return None
+    vals = []
+    for _ in range(n_data_lines):
+        ol = next(it, None)
+        if ol is None or ol.startswith('>'):
+            break
+        for k in range(4):
+            s = 4 + k * 19
+            try:
+                v = float(ol[s:s + 19]) if len(ol) >= s + 8 else 0.0
+            except (ValueError, IndexError):
+                v = 0.0
+            vals.append(v)
+    return {
+        'vals': vals, 'year': year, 'month': month, 'day': day,
+        'hour': hour, 'minute': minute,
+        'af0': af0, 'af1': af1, 'af2': af2,
+    }
+
+
+def parse_rinex4_combined(line_iter):
+    """Single-pass streaming parser. Dispatches each EPH record by constellation+message
+    type. Returns {'gps_cnav', 'bds_d', 'bds_cnv1', 'gal_inav', 'gal_fnav'} dicts.
+
+    Avoids holding the full file text or a 178k-line list in memory — critical on
+    constrained hosts like Render free tier."""
+    it = iter(line_iter)
+    # Skip header
+    for line in it:
+        if 'END OF HEADER' in line:
+            break
+
+    gps_cnav = {}
+    bds_d = {}
+    bds_cnv1 = {}
+    gal_inav = {}
+    gal_fnav = {}
+
+    for ln in it:
+        if not ln.startswith('> EPH '):
+            continue
+        parts = ln.split()
+        if len(parts) < 4:
+            continue
+        sat_id = parts[2]
+        msg_type = parts[3]
+        if not sat_id or len(sat_id) < 2:
+            continue
+        try:
+            prn = int(sat_id[1:])
+        except (ValueError, IndexError):
+            continue
+        sys_letter = sat_id[0]
+        epoch_line = next(it, None)
+        if epoch_line is None:
+            break
+
+        if sys_letter == 'G' and msg_type == 'CNAV':
+            rec = _read_record_from_iter(it, 8, epoch_line)
+            if not rec or len(rec['vals']) < 29:
+                continue
+            v = rec['vals']
+            toe = v[8]
+            if prn not in gps_cnav or toe > gps_cnav[prn]['toe']:
+                gps_cnav[prn] = {
+                    'prn': prn,
+                    'epoch':  f"{rec['year']:04d}-{rec['month']:02d}-{rec['day']:02d} {rec['hour']:02d}:{rec['minute']:02d}:00",
+                    'af0': rec['af0'], 'af1': rec['af1'], 'af2': rec['af2'],
+                    'adot': v[0], 'crs': v[1], 'delta_n': v[2], 'm0': v[3],
+                    'cuc': v[4], 'e': v[5], 'cus': v[6], 'sqrt_a': v[7],
+                    'toe': toe, 'cic': v[9], 'omega0': v[10], 'cis': v[11],
+                    'i0': v[12], 'crc': v[13], 'omega': v[14], 'omega_dot': v[15],
+                    'idot': v[16], 'delta_n_dot': v[17],
+                    'urai_oe': v[18], 'urai_ed': v[20], 'tgd': v[22],
+                    'isc_l1ca': v[24] if len(v) > 24 else 0.0,
+                    'isc_l2c':  v[25] if len(v) > 25 else 0.0,
+                    'isc_l5i5': v[26] if len(v) > 26 else 0.0,
+                    'isc_l5q5': v[27] if len(v) > 27 else 0.0,
+                    'top': v[28],
+                    'gps_week': int(v[29]) if len(v) > 29 else 0,
+                }
+        elif sys_letter == 'C' and msg_type in ('D1', 'D2'):
+            rec = _read_record_from_iter(it, 8, epoch_line)
+            if not rec or len(rec['vals']) < 26:
+                continue
+            v = rec['vals']
+            toe = v[8]
+            week = int(v[18]) if len(v) > 18 else 0
+            existing = bds_d.get(prn)
+            if (not existing) or (week, toe) > (existing.get('bdt_week', 0), existing['toe']):
+                bds_d[prn] = {
+                    'prn': prn, 'msg_type': msg_type,
+                    'epoch':  f"{rec['year']:04d}-{rec['month']:02d}-{rec['day']:02d} {rec['hour']:02d}:{rec['minute']:02d}:00",
+                    'af0': rec['af0'], 'af1': rec['af1'], 'af2': rec['af2'],
+                    'aode': v[0], 'crs': v[1], 'delta_n': v[2], 'm0': v[3],
+                    'cuc': v[4], 'e': v[5], 'cus': v[6], 'sqrt_a': v[7],
+                    'toe': toe, 'cic': v[9], 'omega0': v[10], 'cis': v[11],
+                    'i0': v[12], 'crc': v[13], 'omega': v[14], 'omega_dot': v[15],
+                    'idot': v[16], 'bdt_week': week,
+                    'ura_index': v[20] if len(v) > 20 else 0.0,
+                    'sat_h1': int(v[21]) if len(v) > 21 else 0,
+                    'tgd1': v[22] if len(v) > 22 else 0.0,
+                    'tgd2': v[23] if len(v) > 23 else 0.0,
+                    'tx_time': v[24] if len(v) > 24 else 0.0,
+                    'aodc': v[25] if len(v) > 25 else 0.0,
+                }
+        elif sys_letter == 'C' and msg_type == 'CNV1':
+            rec = _read_record_from_iter(it, 10, epoch_line)
+            if not rec or len(rec['vals']) < 30:
+                continue
+            v = rec['vals']
+            toe = v[8]
+            existing = bds_cnv1.get(prn)
+            if (not existing) or toe > existing['toe']:
+                bds_cnv1[prn] = {
+                    'prn': prn,
+                    'epoch':  f"{rec['year']:04d}-{rec['month']:02d}-{rec['day']:02d} {rec['hour']:02d}:{rec['minute']:02d}:00",
+                    'af0': rec['af0'], 'af1': rec['af1'], 'af2': rec['af2'],
+                    'adot': v[0], 'crs': v[1], 'delta_n': v[2], 'm0': v[3],
+                    'cuc': v[4], 'e': v[5], 'cus': v[6], 'sqrt_a': v[7],
+                    'toe': toe, 'cic': v[9], 'omega0': v[10], 'cis': v[11],
+                    'i0': v[12], 'crc': v[13], 'omega': v[14], 'omega_dot': v[15],
+                    'idot': v[16], 'delta_n_dot': v[17],
+                    'sat_type': int(v[18]) if len(v) > 18 else 0,
+                    'top': v[19] if len(v) > 19 else 0.0,
+                    'sisai_oe': v[20] if len(v) > 20 else 0.0,
+                    'sisai_ocb': v[21] if len(v) > 21 else 0.0,
+                    'sisai_oc1': v[22] if len(v) > 22 else 0.0,
+                    'sisai_oc2': v[23] if len(v) > 23 else 0.0,
+                    'isc_b1cd': v[24] if len(v) > 24 else 0.0,
+                    'tgd_b1cp': v[26] if len(v) > 26 else 0.0,
+                    'tgd_b2ap': v[27] if len(v) > 27 else 0.0,
+                    'sismai': v[28] if len(v) > 28 else 0.0,
+                    'health': int(v[29]) if len(v) > 29 else 0,
+                    'integrity': int(v[30]) if len(v) > 30 else 0,
+                    'tx_time': v[32] if len(v) > 32 else 0.0,
+                }
+        elif sys_letter == 'E' and msg_type in ('INAV', 'FNAV'):
+            rec = _read_record_from_iter(it, 8, epoch_line)
+            if not rec or len(rec['vals']) < 25:
+                continue
+            v = rec['vals']
+            toe = v[8]
+            week = int(v[18]) if len(v) > 18 else 0
+            record = {
+                'prn': prn, 'msg_type': msg_type,
+                'epoch':  f"{rec['year']:04d}-{rec['month']:02d}-{rec['day']:02d} {rec['hour']:02d}:{rec['minute']:02d}:00",
+                'af0': rec['af0'], 'af1': rec['af1'], 'af2': rec['af2'],
+                'iodnav': int(v[0]),
+                'crs': v[1], 'delta_n': v[2], 'm0': v[3],
+                'cuc': v[4], 'e': v[5], 'cus': v[6], 'sqrt_a': v[7],
+                'toe': toe, 'cic': v[9], 'omega0': v[10], 'cis': v[11],
+                'i0': v[12], 'crc': v[13], 'omega': v[14], 'omega_dot': v[15],
+                'idot': v[16], 'data_sources': int(v[17]),
+                'gal_week': week,
+                'sisa': v[20] if len(v) > 20 else 0.0,
+                'sv_health': int(v[21]) if len(v) > 21 else 0,
+                'bgd_e5a_e1': v[22] if len(v) > 22 else 0.0,
+                'bgd_e5b_e1': v[23] if len(v) > 23 else 0.0,
+                'tx_time': v[24] if len(v) > 24 else 0.0,
+            }
+            target = gal_inav if msg_type == 'INAV' else gal_fnav
+            existing = target.get(prn)
+            if (not existing) or (week, toe) > (existing['gal_week'], existing['toe']):
+                target[prn] = record
+
+    return {
+        'gps_cnav': gps_cnav,
+        'bds_d': bds_d,
+        'bds_cnv1': bds_cnv1,
+        'gal_inav': gal_inav,
+        'gal_fnav': gal_fnav,
+    }
+
+
 def parse_rinex4_nav(text):
     """Parse RINEX 4 GPS CNAV (L2C/L5) records. Returns {prn: cnav_dict} with most recent TOE."""
     lines = text.splitlines()
