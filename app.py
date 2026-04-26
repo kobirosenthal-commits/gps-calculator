@@ -139,7 +139,19 @@ threading.Thread(target=_rinex_refresh_worker, daemon=True).start()
 
 
 rinex4_diag = {'last_error': None, 'file_size': None, 'file_exists': None,
-               'attempts': 0, 'parsed_counts': None}
+               'attempts': 0, 'parsed_counts': None, 'stage': 'init',
+               'rss_mb': None}
+
+
+def _rss_mb():
+    try:
+        with open('/proc/self/status', 'r') as f:
+            for line in f:
+                if line.startswith('VmRSS:'):
+                    return int(line.split()[1]) // 1024
+    except Exception:
+        return None
+    return None
 
 
 def _rinex4_refresh_worker():
@@ -151,6 +163,8 @@ def _rinex4_refresh_worker():
     while True:
         loaded = False
         rinex4_diag['attempts'] += 1
+        rinex4_diag['stage'] = 'stat'
+        rinex4_diag['rss_mb'] = _rss_mb()
         try:
             rinex4_diag['file_exists'] = os.path.exists(rinex4_path)
             rinex4_diag['file_size'] = os.path.getsize(rinex4_path) if rinex4_diag['file_exists'] else None
@@ -160,14 +174,23 @@ def _rinex4_refresh_worker():
         for offset in range(1, 4):
             dt = datetime.now(timezone.utc) - timedelta(days=offset)
             try:
+                rinex4_diag['stage'] = f'fetch:offset{offset}'
                 text = fetch_gps_rinex4(dt)
+                rinex4_diag['rss_mb'] = _rss_mb()
                 if not text:
                     rinex4_diag['last_error'] = f"fetch_gps_rinex4 returned None for offset {offset}"
                     continue
                 date_str = dt.strftime('%Y-%m-%d')
+                rinex4_diag['stage'] = 'parse_gps'
                 eph = parse_rinex4_nav(text)
+                rinex4_diag['rss_mb'] = _rss_mb()
+                rinex4_diag['stage'] = 'parse_bds'
                 bei = parse_rinex4_beidou(text)
+                rinex4_diag['rss_mb'] = _rss_mb()
+                rinex4_diag['stage'] = 'parse_gal'
                 gal = parse_rinex4_galileo(text)
+                rinex4_diag['rss_mb'] = _rss_mb()
+                rinex4_diag['stage'] = 'assign'
                 rinex4_diag['parsed_counts'] = {
                     'gps_cnav': len(eph), 'bds_d': len(bei['d']), 'bds_cnv1': len(bei['cnv1']),
                     'gal_inav': len(gal['inav']), 'gal_fnav': len(gal['fnav']),
@@ -193,6 +216,7 @@ def _rinex4_refresh_worker():
                     gal_fnav_data = {'ephemeris': gal['fnav'], 'date': date_str}
                     app.logger.info(f"RINEX4 loaded: {len(gal['fnav'])} Galileo F/NAV PRNs from {date_str}")
                     loaded = True
+                rinex4_diag['stage'] = 'done' if loaded else 'no_data'
                 if loaded:
                     rinex4_diag['last_error'] = None
                     break
@@ -200,7 +224,9 @@ def _rinex4_refresh_worker():
             except Exception as e:
                 tb = traceback.format_exc(limit=3)
                 rinex4_diag['last_error'] = f"{type(e).__name__}: {e}\n{tb}"
+                rinex4_diag['stage'] = f'error:{type(e).__name__}'
                 app.logger.warning(f"RINEX4 refresh error: {e}\n{tb}")
+        rinex4_diag['stage'] = f'sleep:{6*3600 if loaded else 120}s'
         time.sleep(6 * 3600 if loaded else 120)
 
 
