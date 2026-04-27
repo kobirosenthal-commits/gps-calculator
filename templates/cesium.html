@@ -114,6 +114,8 @@
         .tog-bei.active { background: rgba(255,204,0,0.18); }
         .tog-gal { color: #ff9500; border-color: #ff9500; background: rgba(255,149,0,0.08); }
         .tog-gal.active { background: rgba(255,149,0,0.18); }
+        .trail-toggle { color: #aac; font-size: 0.85em; display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; cursor: pointer; user-select: none; }
+        .trail-toggle input { accent-color: #7ecfff; cursor: pointer; }
 
         #tooltip {
             position: absolute; background: rgba(0,5,20,0.93); border: 1px solid #3a6aaa;
@@ -354,6 +356,7 @@
         <button id="tog-glo" class="tog-btn tog-glo active" onclick="toggleConst('GLONASS')">GLO</button>
         <button id="tog-bei" class="tog-btn tog-bei active" onclick="toggleConst('BEIDOU')">BDS</button>
         <button id="tog-gal" class="tog-btn tog-gal active" onclick="toggleConst('GALILEO')">GAL</button>
+        <label class="trail-toggle"><input type="checkbox" id="tog-trail" checked onchange="toggleTrail(this.checked)"> Trails</label>
     </div>
     <div id="topbar-right">
         <button id="btn-2d" disabled onclick="toggle2D()">⊙ 2D Sky Plot</button>
@@ -602,6 +605,15 @@ function sigBadges(signals) {
 
 // ── Constellation visibility ──────────────────────────────────────────
 const enabledConst = { GPS: true, GLONASS: true, BEIDOU: true, GALILEO: true };
+let trailsOn = true;
+
+function toggleTrail(on) {
+    trailsOn = on;
+    for (const [key, entry] of Object.entries(satEntities)) {
+        const c = satData[key] && satData[key].constellation;
+        entry.trail.show = on && !!enabledConst[c];
+    }
+}
 
 function toggleConst(c) {
     enabledConst[c] = !enabledConst[c];
@@ -610,7 +622,7 @@ function toggleConst(c) {
     for (const [key, entry] of Object.entries(satEntities)) {
         if (satData[key] && satData[key].constellation === c) {
             entry.point.show = enabledConst[c];
-            entry.trail.show = enabledConst[c];
+            entry.trail.show = enabledConst[c] && trailsOn;
         }
     }
     for (const [key, link] of Object.entries(linkEntities)) {
@@ -670,7 +682,7 @@ function updateSatellites(satellites) {
                 },
             });
             const trail = viewer.entities.add({
-                show: show,
+                show: show && trailsOn,
                 polyline: {
                     positions:   new Cesium.ConstantProperty([pos]),
                     width:       1.5,
@@ -683,7 +695,7 @@ function updateSatellites(satellites) {
         } else {
             const e = satEntities[sat.label];
             e.point.show = show;
-            e.trail.show = show;
+            e.trail.show = show && trailsOn;
             e.point.position = new Cesium.ConstantPositionProperty(pos);
             e.point.point.color    = new Cesium.ConstantProperty(color);
             e.point.label.fillColor = new Cesium.ConstantProperty(color);
