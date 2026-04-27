@@ -39,14 +39,24 @@
         #status .lbl { color: #5599cc; }
         #status .val { color: #e0f0ff; font-weight: 600; }
         #status .val.frozen { color: #ffaa55; }
-        .time-edit-block {
-            display: none; margin-top: 8px; padding-top: 10px;
-            border-top: 1px solid #1a3a5c;
+        #time-edit {
+            display: none;
+            top: 60px; left: 240px;
+            padding: 14px 16px; width: 260px;
+            font-size: 0.82em; z-index: 12;
         }
-        .time-edit-block.open { display: block; }
-        .time-edit-hint { color: #5599cc; font-size: 0.78em; margin-bottom: 6px; line-height: 1.4; }
+        #time-edit.open { display: block; }
+        #time-edit h3 { color: #7ecfff; letter-spacing: 1px; margin-bottom: 10px; font-size: 1em; }
+        .time-edit-hint { color: #5599cc; font-size: 0.78em; margin-bottom: 8px; line-height: 1.4; }
         .time-row { margin-bottom: 6px; }
         .time-row input { font-family: inherit; }
+        /* Mobile: drop into the bottom-sheet flow alongside status. */
+        @media (max-width: 640px) {
+            #time-edit {
+                top: auto; left: 16px; right: 16px; width: auto;
+                bottom: 120px;
+            }
+        }
 
         #recv-panel { top: 325px; left: 20px; padding: 14px 16px; width: 240px; font-size: 0.82em; }
         #recv-panel h3 { color: #7ecfff; letter-spacing: 1px; margin-bottom: 12px; font-size: 1em; }
@@ -360,22 +370,23 @@
     <div><span class="lbl">BEIDOU   </span><span class="val" id="st-bei">—</span></div>
     <div><span class="lbl">GALILEO  </span><span class="val" id="st-gal">—</span></div>
     <div><span class="lbl">UPDATE   </span><span class="val" id="st-update">every 5s</span></div>
-
-    <div id="time-edit" class="time-edit-block">
-        <div class="time-edit-hint">UTC and TOS update each other. Times are UTC.</div>
-        <div class="field-row time-row"><label>UTC</label>
-            <input id="inp-utc" type="datetime-local" step="1" oninput="onUtcInputChange()"></div>
-        <div class="field-row time-row"><label>TOS</label>
-            <input id="inp-tos" type="number" step="1" min="0" max="86399"
-                   placeholder="sec since 00:00 UTC" oninput="onTosInputChange()"></div>
-        <div class="btn-row" style="margin-top:6px">
-            <button class="btn btn-set" onclick="applyFrozenTime()">Apply</button>
-            <button class="btn btn-clear" onclick="closeTimeEdit()">Cancel</button>
-        </div>
-    </div>
     <div class="btn-row" style="margin-top:8px">
         <button id="btn-time-edit" class="btn btn-set" onclick="openTimeEdit()">⏱ Set Time</button>
         <button id="btn-live" class="btn btn-geo" style="display:none" onclick="goLive()">▶ Live</button>
+    </div>
+</div>
+
+<div class="card" id="time-edit">
+    <h3>🕐 Time Control</h3>
+    <div class="time-edit-hint">UTC and TOS update each other. Times are UTC.</div>
+    <div class="field-row time-row"><label>UTC</label>
+        <input id="inp-utc" type="datetime-local" step="1" oninput="onUtcInputChange()"></div>
+    <div class="field-row time-row"><label>TOS</label>
+        <input id="inp-tos" type="number" step="1" min="0" max="86399"
+               placeholder="sec since 00:00 UTC" oninput="onTosInputChange()"></div>
+    <div class="btn-row" style="margin-top:6px">
+        <button class="btn btn-set" onclick="applyFrozenTime()">Apply</button>
+        <button class="btn btn-clear" onclick="closeTimeEdit()">Cancel</button>
     </div>
 </div>
 
