@@ -1406,7 +1406,11 @@ function drawSkyPlot(satellites) {
     const topOffset    = document.getElementById('topbar').getBoundingClientRect().height;
     const mobBarEl     = document.getElementById('mob-bar');
     const bottomOffset = (mobBarEl && getComputedStyle(mobBarEl).display !== 'none') ? mobBarEl.offsetHeight : 0;
-    const drawH = H - topOffset - bottomOffset;
+    // If a mobile bottom-sheet panel is open, shrink the draw area so the
+    // polar plot fits above it instead of being covered.
+    const openPanel = document.querySelector('#status.mob-open, #recv-panel.mob-open, #sat-panel.mob-open');
+    const panelOffset = openPanel ? openPanel.getBoundingClientRect().height : 0;
+    const drawH = H - topOffset - bottomOffset - panelOffset;
     const cx = W / 2;
     const cy = topOffset + drawH / 2;
     const R  = Math.min(W, drawH) * 0.42;
@@ -1590,7 +1594,14 @@ function mobToggle(panelId, tabId) {
     } else {
         panel.classList.add('mob-open');
         document.getElementById(tabId).classList.add('active');
-        backdrop.classList.add('show');
+        // In 2D mode keep the polar plot above the panel visible and clickable —
+        // the backdrop would dim the plot and steal taps.
+        if (!view2D) backdrop.classList.add('show');
+    }
+    if (view2D && lastSatellites.length) {
+        // Wait for the slide-up transition (0.28s) so getBoundingClientRect
+        // reflects the panel's final visible height, not its mid-animation position.
+        setTimeout(() => drawSkyPlot(lastSatellites), 300);
     }
 }
 
@@ -1598,6 +1609,9 @@ function mobClose() {
     MOB_PANELS.forEach(id => document.getElementById(id).classList.remove('mob-open'));
     MOB_TABS.forEach(id => document.getElementById(id).classList.remove('active'));
     document.getElementById('mob-backdrop').classList.remove('show');
+    if (view2D && lastSatellites.length) {
+        setTimeout(() => drawSkyPlot(lastSatellites), 300);
+    }
 }
 </script>
 </body>
