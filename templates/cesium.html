@@ -288,30 +288,38 @@
             #sp-nav-pos { min-width: 40px; }
         }
 
-        /* In 2D mode, force the mobile bottom-sheet UX up to 1000px so
-           floating cards never overlap the polar plot on tablets/phones
-           that fall outside the 640px breakpoint. Mirrors the 3D mobile
-           experience: only the bottom bar is visible, panels open via tap. */
-        @media (max-width: 1000px) {
-            body.view2d #mob-bar { display: flex !important; }
-            body.view2d #zoom-ctrl { bottom: 66px; }
-            body.view2d #status,
-            body.view2d #recv-panel,
-            body.view2d #sat-panel {
-                top: auto !important; left: 0 !important; right: 0 !important;
-                bottom: 56px !important; width: 100% !important; height: auto !important;
-                max-height: 70vh; overflow-y: auto;
-                border-radius: 12px 12px 0 0; border-bottom: none;
-                transform: translateY(110%);
-                transition: transform 0.28s cubic-bezier(.2,.8,.3,1);
-                padding: 16px 20px 20px;
-            }
-            body.view2d #status.mob-open,
-            body.view2d #recv-panel.mob-open,
-            body.view2d #sat-panel.mob-open {
-                transform: translateY(0) !important; z-index: 15;
-            }
+        /* In 2D mode, the polar plot is the focus — floating cards always get
+           in the way. Hide them entirely with display:none (which can't leak
+           through any other rule) and only render the active panel as a
+           full-width bottom sheet. Mirrors the 3D mobile UX at every width. */
+        body.view2d #status,
+        body.view2d #recv-panel,
+        body.view2d #sat-panel {
+            display: none !important;
         }
+        body.view2d #status.mob-open,
+        body.view2d #recv-panel.mob-open,
+        body.view2d #sat-panel.mob-open {
+            display: block !important;
+            position: fixed !important;
+            top: auto !important; left: 0 !important; right: 0 !important;
+            bottom: 56px !important;
+            width: 100% !important; max-width: 100% !important;
+            height: auto !important; max-height: 70vh !important;
+            overflow-y: auto !important;
+            transform: none !important; transition: none !important;
+            border-radius: 12px 12px 0 0 !important;
+            border-bottom: none !important;
+            z-index: 15 !important;
+            padding: 16px 20px 20px !important;
+        }
+        body.view2d #sat-panel.mob-open { padding: 0 !important; }
+        body.view2d #mob-bar {
+            display: flex !important;
+            position: fixed !important;
+            bottom: 0 !important; left: 0 !important; right: 0 !important;
+        }
+        body.view2d #zoom-ctrl { display: none !important; }
     </style>
 </head>
 <body>
