@@ -775,7 +775,19 @@ def live_positions():
     if not almanac_data['satellites'] and not glo_data['tles'] and not bei_data['tles'] and not gal_data['tles']:
         return jsonify({'error': 'Could not load satellite data'}), 503
 
-    now = datetime.now(timezone.utc)
+    # Optional ?at=<iso8601> freezes propagation at a chosen UTC instant.
+    # Lets the frontend pin satellite state to a specific moment for analysis.
+    at_str = request.args.get('at')
+    frozen = False
+    if at_str:
+        try:
+            now = datetime.fromisoformat(at_str.replace('Z', '+00:00'))
+            now = now.replace(tzinfo=timezone.utc) if now.tzinfo is None else now.astimezone(timezone.utc)
+            frozen = True
+        except ValueError:
+            return jsonify({'error': f'Invalid "at" timestamp: {at_str!r}'}), 400
+    else:
+        now = datetime.now(timezone.utc)
     gps_sec = gps_time_from_datetime(now)
     positions = []
 
@@ -809,8 +821,12 @@ def live_positions():
             except Exception as e:
                 log.warning(f"propagate_tle({tle.get('label')}): {type(e).__name__}: {e}")
 
+    tos = now.hour * 3600 + now.minute * 60 + now.second + now.microsecond / 1e6
     return jsonify({
         'time': now.strftime("%Y-%m-%d %H:%M:%S UTC"),
+        'time_iso': now.isoformat().replace('+00:00', 'Z'),
+        'tos': round(tos, 3),
+        'frozen': frozen,
         'almanac_date': almanac_data['date'],
         'satellites': positions,
     })

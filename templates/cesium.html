@@ -38,6 +38,15 @@
         #status { top: 60px; left: 20px; padding: 14px 18px; line-height: 1.9; min-width: 200px; font-size: 0.82em; }
         #status .lbl { color: #5599cc; }
         #status .val { color: #e0f0ff; font-weight: 600; }
+        #status .val.frozen { color: #ffaa55; }
+        .time-edit-block {
+            display: none; margin-top: 8px; padding-top: 10px;
+            border-top: 1px solid #1a3a5c;
+        }
+        .time-edit-block.open { display: block; }
+        .time-edit-hint { color: #5599cc; font-size: 0.78em; margin-bottom: 6px; line-height: 1.4; }
+        .time-row { margin-bottom: 6px; }
+        .time-row input { font-family: inherit; }
 
         #recv-panel { top: 325px; left: 20px; padding: 14px 16px; width: 240px; font-size: 0.82em; }
         #recv-panel h3 { color: #7ecfff; letter-spacing: 1px; margin-bottom: 12px; font-size: 1em; }
@@ -344,12 +353,30 @@
 
 <div class="card" id="status">
     <div><span class="lbl">UTC TIME </span><span class="val" id="st-time">—</span></div>
+    <div><span class="lbl">TOS      </span><span class="val" id="st-tos">—</span></div>
     <div><span class="lbl">ALMANAC  </span><span class="val" id="st-almanac">—</span></div>
     <div><span class="lbl">GPS      </span><span class="val" id="st-gps">—</span></div>
     <div><span class="lbl">GLONASS  </span><span class="val" id="st-glo">—</span></div>
     <div><span class="lbl">BEIDOU   </span><span class="val" id="st-bei">—</span></div>
     <div><span class="lbl">GALILEO  </span><span class="val" id="st-gal">—</span></div>
-    <div><span class="lbl">UPDATE   </span><span class="val">every 5s</span></div>
+    <div><span class="lbl">UPDATE   </span><span class="val" id="st-update">every 5s</span></div>
+
+    <div id="time-edit" class="time-edit-block">
+        <div class="time-edit-hint">UTC and TOS update each other. Times are UTC.</div>
+        <div class="field-row time-row"><label>UTC</label>
+            <input id="inp-utc" type="datetime-local" step="1" oninput="onUtcInputChange()"></div>
+        <div class="field-row time-row"><label>TOS</label>
+            <input id="inp-tos" type="number" step="1" min="0" max="86399"
+                   placeholder="sec since 00:00 UTC" oninput="onTosInputChange()"></div>
+        <div class="btn-row" style="margin-top:6px">
+            <button class="btn btn-set" onclick="applyFrozenTime()">Apply</button>
+            <button class="btn btn-clear" onclick="closeTimeEdit()">Cancel</button>
+        </div>
+    </div>
+    <div class="btn-row" style="margin-top:8px">
+        <button id="btn-time-edit" class="btn btn-set" onclick="openTimeEdit()">⏱ Set Time</button>
+        <button id="btn-live" class="btn btn-geo" style="display:none" onclick="goLive()">▶ Live</button>
+    </div>
 </div>
 
 <div class="card" id="recv-panel">
@@ -904,19 +931,97 @@ viewer.selectedEntityChanged.addEventListener(function(entity) {
 });
 
 // ── Data fetch ────────────────────────────────────────────────────────
+// ── Frozen-time state ─────────────────────────────────────────────────
+// When non-null, fetchLive sends ?at=<iso> and the auto-poll skips itself.
+let frozenTime = null;
+
+function tosFromDate(d) {
+    return d.getUTCHours() * 3600 + d.getUTCMinutes() * 60
+         + d.getUTCSeconds() + d.getUTCMilliseconds() / 1000;
+}
+function utcInputValue(d) {
+    // datetime-local wants "YYYY-MM-DDTHH:MM:SS" with no zone suffix.
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}T`
+         + `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+}
+function fmtTOS(secs) {
+    return Math.floor(secs).toLocaleString() + ' s';
+}
+
+function openTimeEdit() {
+    const base = frozenTime || new Date();
+    document.getElementById('inp-utc').value = utcInputValue(base);
+    document.getElementById('inp-tos').value = Math.floor(tosFromDate(base));
+    document.getElementById('time-edit').classList.add('open');
+}
+function closeTimeEdit() {
+    document.getElementById('time-edit').classList.remove('open');
+}
+
+function onUtcInputChange() {
+    const v = document.getElementById('inp-utc').value;
+    if (!v) return;
+    // datetime-local has no zone — interpret literally as UTC.
+    const d = new Date(v + 'Z');
+    if (isNaN(d)) return;
+    document.getElementById('inp-tos').value = Math.floor(tosFromDate(d));
+}
+function onTosInputChange() {
+    const tos = parseFloat(document.getElementById('inp-tos').value);
+    if (isNaN(tos) || tos < 0 || tos > 86399) return;
+    const utcEl = document.getElementById('inp-utc');
+    const dateStr = (utcEl.value || new Date().toISOString()).slice(0, 10);
+    const d = new Date(dateStr + 'T00:00:00Z');
+    d.setUTCSeconds(d.getUTCSeconds() + tos);
+    utcEl.value = utcInputValue(d);
+}
+
+function applyFrozenTime() {
+    const v = document.getElementById('inp-utc').value;
+    if (!v) return;
+    const d = new Date(v + 'Z');
+    if (isNaN(d)) { alert('Invalid UTC time'); return; }
+    frozenTime = d;
+    document.getElementById('btn-time-edit').style.display = 'none';
+    document.getElementById('btn-live').style.display = '';
+    const upd = document.getElementById('st-update');
+    upd.textContent = 'frozen';
+    upd.classList.add('frozen');
+    closeTimeEdit();
+    fetchLive();
+}
+
+function goLive() {
+    frozenTime = null;
+    document.getElementById('btn-time-edit').style.display = '';
+    document.getElementById('btn-live').style.display = 'none';
+    const upd = document.getElementById('st-update');
+    upd.textContent = 'every 5s';
+    upd.classList.remove('frozen');
+    closeTimeEdit();
+    fetchLive();
+}
+
 async function fetchLive() {
     try {
-        const res  = await fetch('/api/live-positions');
+        const url = frozenTime
+            ? `/api/live-positions?at=${encodeURIComponent(frozenTime.toISOString())}`
+            : '/api/live-positions';
+        const res  = await fetch(url);
         const data = await res.json();
         document.getElementById('loading').style.display = 'none';
         if (!res.ok) { console.error('API error:', data.error); return; }
 
         document.getElementById('st-time').textContent    = data.time;
+        document.getElementById('st-tos').textContent     = data.tos != null ? fmtTOS(data.tos) : '—';
         document.getElementById('st-almanac').textContent = data.almanac_date || '—';
         document.getElementById('st-gps').textContent     = data.satellites.filter(s => s.constellation === 'GPS').length;
         document.getElementById('st-glo').textContent     = data.satellites.filter(s => s.constellation === 'GLONASS').length;
         document.getElementById('st-bei').textContent     = data.satellites.filter(s => s.constellation === 'BEIDOU').length;
         document.getElementById('st-gal').textContent     = data.satellites.filter(s => s.constellation === 'GALILEO').length;
+        document.getElementById('st-time').classList.toggle('frozen', !!data.frozen);
+        document.getElementById('st-tos').classList.toggle('frozen', !!data.frozen);
 
         updateSatellites(data.satellites);
     } catch (e) {
@@ -1607,7 +1712,7 @@ async function bootstrapTLEs() {
 // server background thread finishes fetching (Celestrak or SatNOGS fallback).
 bootstrapTLEs();
 fetchLive();
-setInterval(fetchLive, 5000);
+setInterval(() => { if (!frozenTime) fetchLive(); }, 5000);
 
 // Full refresh every 6 hours
 setInterval(() => {
