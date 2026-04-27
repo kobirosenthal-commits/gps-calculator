@@ -287,6 +287,31 @@
             #sp-sat-label { font-size: 1em; }
             #sp-nav-pos { min-width: 40px; }
         }
+
+        /* In 2D mode, force the mobile bottom-sheet UX up to 1000px so
+           floating cards never overlap the polar plot on tablets/phones
+           that fall outside the 640px breakpoint. Mirrors the 3D mobile
+           experience: only the bottom bar is visible, panels open via tap. */
+        @media (max-width: 1000px) {
+            body.view2d #mob-bar { display: flex !important; }
+            body.view2d #zoom-ctrl { bottom: 66px; }
+            body.view2d #status,
+            body.view2d #recv-panel,
+            body.view2d #sat-panel {
+                top: auto !important; left: 0 !important; right: 0 !important;
+                bottom: 56px !important; width: 100% !important; height: auto !important;
+                max-height: 70vh; overflow-y: auto;
+                border-radius: 12px 12px 0 0; border-bottom: none;
+                transform: translateY(110%);
+                transition: transform 0.28s cubic-bezier(.2,.8,.3,1);
+                padding: 16px 20px 20px;
+            }
+            body.view2d #status.mob-open,
+            body.view2d #recv-panel.mob-open,
+            body.view2d #sat-panel.mob-open {
+                transform: translateY(0) !important; z-index: 15;
+            }
+        }
     </style>
 </head>
 <body>
@@ -1368,8 +1393,11 @@ function toggle2D() {
     document.getElementById('cesiumContainer').style.display = view2D ? 'none' : '';
     document.getElementById('sky-canvas').style.display = view2D ? 'block' : 'none';
     document.getElementById('zoom-ctrl').style.display = view2D ? 'none' : '';
+    // body.view2d forces the mobile bottom-sheet panel UX on tablets/phones
+    // (≤1000px) so floating cards never cover the polar plot.
+    document.body.classList.toggle('view2d', view2D);
     if (view2D) {
-        mobClose();  // close any open mobile bottom sheet before drawing
+        mobClose();
         if (lastSatellites.length) drawSkyPlot(lastSatellites);
     }
 }
@@ -1594,9 +1622,7 @@ function mobToggle(panelId, tabId) {
     } else {
         panel.classList.add('mob-open');
         document.getElementById(tabId).classList.add('active');
-        // In 2D mode keep the polar plot above the panel visible and clickable —
-        // the backdrop would dim the plot and steal taps.
-        if (!view2D) backdrop.classList.add('show');
+        backdrop.classList.add('show');
     }
     if (view2D && lastSatellites.length) {
         // Wait for the slide-up transition (0.28s) so getBoundingClientRect
