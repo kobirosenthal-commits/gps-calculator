@@ -99,7 +99,8 @@ jobs:
                              ('bds_d',    'rinex4_bds_d.json'),
                              ('bds_cnv1', 'rinex4_bds_cnv1.json'),
                              ('gal_inav', 'rinex4_gal_inav.json'),
-                             ('gal_fnav', 'rinex4_gal_fnav.json')):
+                             ('gal_fnav', 'rinex4_gal_fnav.json'),
+                             ('glo_fdma', 'rinex4_glo_fdma.json')):
               eph = parsed[key]
               if not eph:
                   print(f"WARNING: {key} parsed empty — skipping write")

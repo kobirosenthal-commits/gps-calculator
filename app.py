@@ -4,7 +4,8 @@ from gps_core import (fetch_almanac, parse_yuma, propagate, geodetic, gps_time_f
                       fetch_tle_group, parse_tles, propagate_tle, fetch_glonass_slot_map,
                       fetch_gps_rinex, parse_rinex2_nav,
                       fetch_gps_rinex4, parse_rinex4_nav, parse_rinex4_beidou,
-                      parse_rinex4_galileo, parse_rinex4_combined, _rinex4_line_iter)
+                      parse_rinex4_galileo, parse_rinex4_combined, _rinex4_line_iter,
+                      propagate_glonass_eph)
 import logging
 log = logging.getLogger(__name__)
 import math
@@ -37,6 +38,7 @@ bei_d_data   = {'ephemeris': {}, 'date': None}  # BeiDou D1/D2 (legacy B1I/B2I/B
 bei_cnv1_data = {'ephemeris': {}, 'date': None}  # BeiDou-3 B-CNAV1 (B1C)
 gal_inav_data = {'ephemeris': {}, 'date': None}  # Galileo I/NAV (E1-B, E5b-I)
 gal_fnav_data = {'ephemeris': {}, 'date': None}  # Galileo F/NAV (E5a-I)
+glo_fdma_data = {'ephemeris': {}, 'date': None}  # GLONASS L1OF/L2OF FDMA (state-vector eph)
 glo_data = {'tles': [], 'fetched': None}
 bei_data = {'tles': [], 'fetched': None}
 gal_data = {'tles': [], 'fetched': None}
@@ -176,7 +178,7 @@ def _rinex4_refresh_worker():
     never appeared. The workflow now does the parse in CI and writes small JSONs
     that load in milliseconds. Falls back to streaming the raw file if the
     JSONs are absent (first deploy after this change, or workflow failure)."""
-    global rinex4_data, bei_d_data, bei_cnv1_data, gal_inav_data, gal_fnav_data, rinex4_diag
+    global rinex4_data, bei_d_data, bei_cnv1_data, gal_inav_data, gal_fnav_data, glo_fdma_data, rinex4_diag
     import os, traceback
     rinex4_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'gps_rinex4.txt')
     json_targets = [
@@ -184,6 +186,7 @@ def _rinex4_refresh_worker():
         ('rinex4_bds_d.json',    'bei_d_data',     'BeiDou D1/D2'),
         ('rinex4_bds_cnv1.json', 'bei_cnv1_data',  'BeiDou CNV1'),
         ('rinex4_gal_inav.json', 'gal_inav_data',  'Galileo I/NAV'),
+        ('rinex4_glo_fdma.json', 'glo_fdma_data',  'GLONASS FDMA'),
         ('rinex4_gal_fnav.json', 'gal_fnav_data',  'Galileo F/NAV'),
     ]
     while True:
@@ -239,6 +242,7 @@ def _rinex4_refresh_worker():
                     'bds_cnv1': len(parsed['bds_cnv1']),
                     'gal_inav': len(parsed['gal_inav']),
                     'gal_fnav': len(parsed['gal_fnav']),
+                    'glo_fdma': len(parsed.get('glo_fdma', {})),
                 }
                 if parsed['gps_cnav']:
                     rinex4_data = {'ephemeris': parsed['gps_cnav'], 'date': date_str}; loaded = True
@@ -250,6 +254,8 @@ def _rinex4_refresh_worker():
                     gal_inav_data = {'ephemeris': parsed['gal_inav'], 'date': date_str}; loaded = True
                 if parsed['gal_fnav']:
                     gal_fnav_data = {'ephemeris': parsed['gal_fnav'], 'date': date_str}; loaded = True
+                if parsed.get('glo_fdma'):
+                    glo_fdma_data = {'ephemeris': parsed['glo_fdma'], 'date': date_str}; loaded = True
                 rinex4_diag['stage'] = 'done' if loaded else 'no_data'
                 if loaded:
                     rinex4_diag['last_error'] = None
@@ -807,7 +813,16 @@ def live_positions():
     for constellation, cache in (('GLONASS', glo_data), ('BEIDOU', bei_data), ('GALILEO', gal_data)):
         for tle in cache['tles']:
             try:
-                pos = propagate_tle(tle, now)
+                pos = None
+                # GLONASS: prefer broadcast ephemeris (state-vector + RK4) when
+                # available; fall back to TLE/SGP4 for sats not in the RINEX 4
+                # file or when the JSON hasn't loaded yet.
+                if constellation == 'GLONASS' and glo_fdma_data['ephemeris']:
+                    eph = glo_fdma_data['ephemeris'].get(int(tle['id']))
+                    if eph:
+                        pos = propagate_glonass_eph(eph, now)
+                if pos is None:
+                    pos = propagate_tle(tle, now)
                 if not pos:
                     continue
                 geo = geodetic(pos['x'], pos['y'], pos['z'])
@@ -819,7 +834,7 @@ def live_positions():
                     'lat': round(geo['lat'], 4), 'lon': round(geo['lon'], 4), 'alt_km': round(geo['alt'] / 1000, 1),
                 })
             except Exception as e:
-                log.warning(f"propagate_tle({tle.get('label')}): {type(e).__name__}: {e}")
+                log.warning(f"propagate({constellation} {tle.get('label')}): {type(e).__name__}: {e}")
 
     tos = now.hour * 3600 + now.minute * 60 + now.second + now.microsecond / 1e6
     return jsonify({

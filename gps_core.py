@@ -513,6 +513,7 @@ def parse_rinex4_combined(line_iter, progress=None):
     bds_cnv1 = {}
     gal_inav = {}
     gal_fnav = {}
+    glo_fdma = {}
 
     for ln in it:
         line_count += 1
@@ -618,6 +619,29 @@ def parse_rinex4_combined(line_iter, progress=None):
                     'integrity': int(v[30]) if len(v) > 30 else 0,
                     'tx_time': v[32] if len(v) > 32 else 0.0,
                 }
+        elif sys_letter == 'R' and msg_type == 'FDMA':
+            rec = _read_record_from_iter(it, 4, epoch_line)
+            if not rec or len(rec['vals']) < 16:
+                continue
+            v = rec['vals']
+            epoch_str = f"{rec['year']:04d}-{rec['month']:02d}-{rec['day']:02d} {rec['hour']:02d}:{rec['minute']:02d}:00"
+            # Use the epoch instant itself as the comparison key (latest wins).
+            new_key = (rec['year'], rec['month'], rec['day'], rec['hour'], rec['minute'])
+            existing = glo_fdma.get(prn)
+            if existing and existing.get('_key', (0,)) >= new_key:
+                continue
+            glo_fdma[prn] = {
+                'prn': prn,
+                'epoch': epoch_str,
+                '_key': new_key,
+                'tau_n':   rec['af0'],   # SV clock bias (s)
+                'gamma_n': rec['af1'],   # SV relative frequency bias
+                'tk_msg':  rec['af2'],   # message frame time (s of UTC week)
+                'x_km':    v[0], 'vx_kms': v[1], 'ax_kms2': v[2], 'health':   int(v[3]),
+                'y_km':    v[4], 'vy_kms': v[5], 'ay_kms2': v[6], 'freq_num': int(v[7]),
+                'z_km':    v[8], 'vz_kms': v[9], 'az_kms2': v[10],'age_op':   v[11],
+                'status_flags': v[12], 'delta_tau': v[13], 'urai': v[14], 'health_flags': int(v[15]),
+            }
         elif sys_letter == 'E' and msg_type in ('INAV', 'FNAV'):
             rec = _read_record_from_iter(it, 8, epoch_line)
             if not rec or len(rec['vals']) < 25:
@@ -656,6 +680,7 @@ def parse_rinex4_combined(line_iter, progress=None):
         'bds_cnv1': bds_cnv1,
         'gal_inav': gal_inav,
         'gal_fnav': gal_fnav,
+        'glo_fdma': glo_fdma,
     }
 
 
@@ -1021,3 +1046,69 @@ def parse_rinex4_galileo(text):
         i += 1
 
     return {'inav': inav_result, 'fnav': fnav_result}
+
+
+# ── GLONASS RINEX 4 FDMA ──────────────────────────────────────────────────
+# GLONASS broadcasts a state vector in PZ-90 (Earth-fixed) rather than Keplerian
+# elements. Position is propagated by numerically integrating the equations of
+# motion with J2 + lunisolar acceleration + centrifugal/Coriolis terms.
+
+_GLO_GM   = 398600.4418       # km³/s²
+_GLO_AE   = 6378.136          # km
+_GLO_J2   = 1.0826257e-3
+_GLO_OMEGA = 7.2921151467e-5  # rad/s
+
+
+def _glo_deriv(state, a_lp):
+    x, y, z, vx, vy, vz = state
+    ax_lp, ay_lp, az_lp = a_lp
+    r2 = x * x + y * y + z * z
+    r  = r2 ** 0.5
+    if r < 1.0:
+        return (vx, vy, vz, 0.0, 0.0, 0.0)
+    r3 = r2 * r
+    r5 = r3 * r2
+    j2c = 1.5 * _GLO_J2 * _GLO_GM * _GLO_AE * _GLO_AE / r5
+    z2_r2 = z * z / r2
+    ax = (-_GLO_GM / r3) * x - j2c * x * (1.0 - 5.0 * z2_r2) + _GLO_OMEGA * _GLO_OMEGA * x + 2.0 * _GLO_OMEGA * vy + ax_lp
+    ay = (-_GLO_GM / r3) * y - j2c * y * (1.0 - 5.0 * z2_r2) + _GLO_OMEGA * _GLO_OMEGA * y - 2.0 * _GLO_OMEGA * vx + ay_lp
+    az = (-_GLO_GM / r3) * z - j2c * z * (3.0 - 5.0 * z2_r2) + az_lp
+    return (vx, vy, vz, ax, ay, az)
+
+
+def _glo_rk4_step(state, a_lp, h):
+    k1 = _glo_deriv(state, a_lp)
+    s2 = tuple(state[i] + 0.5 * h * k1[i] for i in range(6))
+    k2 = _glo_deriv(s2, a_lp)
+    s3 = tuple(state[i] + 0.5 * h * k2[i] for i in range(6))
+    k3 = _glo_deriv(s3, a_lp)
+    s4 = tuple(state[i] + h * k3[i] for i in range(6))
+    k4 = _glo_deriv(s4, a_lp)
+    return tuple(state[i] + (h / 6.0) * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]) for i in range(6))
+
+
+def propagate_glonass_eph(eph, dt):
+    """Propagate a GLONASS broadcast ephemeris (state vector + lunisolar accel)
+    to UTC instant `dt`. Returns ECEF/PZ-90 {'x','y','z'} in meters.
+
+    `eph` is a record produced by parse_rinex4_glonass / parse_rinex4_combined."""
+    epoch = datetime.strptime(eph['epoch'], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    dt_total = (dt - epoch).total_seconds()
+    state = (eph['x_km'], eph['y_km'], eph['z_km'],
+             eph['vx_kms'], eph['vy_kms'], eph['vz_kms'])
+    a_lp = (eph['ax_kms2'], eph['ay_kms2'], eph['az_kms2'])
+    # 60-second steps are accurate to a few meters over the typical ±15 min
+    # propagation window for GLONASS broadcasts.
+    step = 60.0 if dt_total >= 0 else -60.0
+    remaining = dt_total
+    while abs(remaining) > abs(step):
+        state = _glo_rk4_step(state, a_lp, step)
+        remaining -= step
+    if abs(remaining) > 1e-6:
+        state = _glo_rk4_step(state, a_lp, remaining)
+    return {'x': state[0] * 1000.0, 'y': state[1] * 1000.0, 'z': state[2] * 1000.0}
+
+
+def parse_rinex4_glonass(text):
+    """Standalone parser. Returns {prn: glonass_eph_dict} keeping the latest epoch."""
+    return parse_rinex4_combined(iter(text.splitlines()))['glo_fdma']
