@@ -1,0 +1,11 @@
+.git
+.github
+.claude
+.venv
+__pycache__
+*.pyc
+*.pyo
+.idea
+.vscode
+*.md
+data/gps_rinex4.txt
