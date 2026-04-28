@@ -1346,6 +1346,42 @@ function buildSatDetailHtml(data, sat, rangeKm, elev, az) {
         return h;
     }
 
+    if (data.glonass_fdma) {
+        const g = data.glonass_fdma;
+        html += '<div class="sd-section" id="sd-glo-fdma"><h4>BROADCAST EPHEMERIS — FDMA (L1OF / L2OF)</h4>';
+        html += '<div class="sd-sub">Clock &amp; Status</div>';
+        html += sdRow('toc (UTC)',       g.toc);
+        html += sdRow('tk (msg frame)',  g.tk_msg.toFixed(0) + ' s');
+        html += sdRow('-τₙ (clock bias)', g.tau_n.toExponential(3) + ' s');
+        html += sdRow('+γₙ (rel freq)',   g.gamma_n.toExponential(3));
+        html += sdRow('Δτ (L2-L1)',      g.delta_tau.toExponential(3) + ' s');
+        html += sdRow('Health',          g.health === 0
+            ? '<span style="color:#00ff88">0 — Healthy</span>'
+            : '<span style="color:#ff5555">' + g.health + ' — Unhealthy</span>');
+        html += sdRow('Health flags',    '0x' + g.health_flags.toString(16).toUpperCase() + ' (' + g.health_flags + ')');
+        html += sdRow('Status flags',    g.status_flags.toFixed(0));
+        html += sdRow('URAI',            g.urai.toFixed(0));
+        html += sdRow('Frequency #',     g.freq_num);
+        html += sdRow('Age of op info',  g.age_op.toFixed(0) + ' days');
+        html += '<div class="sd-sub">State Vector — Position (PZ-90)</div>';
+        html += sdRow('X',  g.x_km.toFixed(3) + ' km');
+        html += sdRow('Y',  g.y_km.toFixed(3) + ' km');
+        html += sdRow('Z',  g.z_km.toFixed(3) + ' km');
+        html += '<div class="sd-sub">State Vector — Velocity</div>';
+        html += sdRow('Ẋ',  g.vx_kms.toFixed(6) + ' km/s');
+        html += sdRow('Ẏ',  g.vy_kms.toFixed(6) + ' km/s');
+        html += sdRow('Ż',  g.vz_kms.toFixed(6) + ' km/s');
+        html += '<div class="sd-sub">State Vector — Lunisolar Acceleration</div>';
+        html += sdRow('Ẍ',  g.ax_kms2.toExponential(3) + ' km/s²');
+        html += sdRow('Ÿ',  g.ay_kms2.toExponential(3) + ' km/s²');
+        html += sdRow('Z̈',  g.az_kms2.toExponential(3) + ' km/s²');
+        html += sdRow('Source', 'RINEX4 ' + g.rinex_date);
+        html += '</div>';
+    } else if (sat.constellation === 'GLONASS') {
+        html += '<div class="sd-section" id="sd-glo-fdma"><h4>BROADCAST EPHEMERIS — FDMA (L1OF / L2OF)</h4>' +
+            '<div class="sd-pending">RINEX-4 data loading from BKG — auto-refreshing…</div></div>';
+    }
+
     if (data.galileo_inav) {
         html += renderGalileoBlock(data.galileo_inav, 'I/NAV (E1-B / E5b-I)', 'sd-gal-inav', true);
     } else if (sat.constellation === 'GALILEO') {

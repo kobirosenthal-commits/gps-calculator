@@ -591,6 +591,33 @@ def satellite_detail():
                 'integrity':   cnv1['integrity'],
                 'rinex_date':  bei_cnv1_data['date'],
             }
+    if constellation == 'GLONASS':
+        prn = tle.get('id')
+        g = glo_fdma_data['ephemeris'].get(prn)
+        if g:
+            resp['glonass_fdma'] = {
+                'toc':         g['epoch'],
+                'tau_n':       g['tau_n'],
+                'gamma_n':     g['gamma_n'],
+                'tk_msg':      g['tk_msg'],
+                'x_km':        g['x_km'],
+                'y_km':        g['y_km'],
+                'z_km':        g['z_km'],
+                'vx_kms':      g['vx_kms'],
+                'vy_kms':      g['vy_kms'],
+                'vz_kms':      g['vz_kms'],
+                'ax_kms2':     g['ax_kms2'],
+                'ay_kms2':     g['ay_kms2'],
+                'az_kms2':     g['az_kms2'],
+                'health':      g['health'],
+                'health_flags': g['health_flags'],
+                'freq_num':    g['freq_num'],
+                'age_op':      g['age_op'],
+                'status_flags': g['status_flags'],
+                'delta_tau':   g['delta_tau'],
+                'urai':        g['urai'],
+                'rinex_date':  glo_fdma_data['date'],
+            }
     if constellation == 'GALILEO':
         prn = tle.get('id')
         for src_name, src_data, key in (
