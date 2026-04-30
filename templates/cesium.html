@@ -1304,6 +1304,69 @@ function buildSatDetailHtml(data, sat, rangeKm, elev, az) {
         html += '</div>';
     }
 
+    function renderBeidouCnvBlock(c, title, anchorId, signalKind) {
+        // signalKind: 'cnv2' (B2a) or 'cnv3' (B2b) — selects which TGD/ISC fields to label.
+        let h = '<div class="sd-section" id="' + anchorId + '"><h4>BROADCAST EPHEMERIS — ' + title + '</h4>';
+        h += '<div class="sd-sub">Clock</div>';
+        h += sdRow('toc (UTC)',        c.toc);
+        h += sdRow('ToE',              c.toe.toFixed(0) + ' s');
+        h += sdRow('top',              c.top.toFixed(0) + ' s');
+        if (signalKind === 'cnv2') {
+            h += sdRow('TGD B1Cp',     c.tgd_b1cp.toExponential(3) + ' s');
+            h += sdRow('TGD B2ap',     c.tgd_b2ap.toExponential(3) + ' s');
+            h += sdRow('ISC B2ad',     c.isc_b2ad.toExponential(3) + ' s');
+        } else {
+            h += sdRow('SF B2bI',      c.sf_b2bi.toExponential(3));
+        }
+        h += sdRow('af₀',              c.af0.toExponential(3) + ' s');
+        h += sdRow('af₁',              c.af1.toExponential(3) + ' s/s');
+        h += sdRow('af₂',              c.af2.toExponential(3) + ' s/s²');
+        h += '<div class="sd-sub">Ephemeris</div>';
+        h += sdRow('√A',               c.sqrt_a.toFixed(3) + ' m½');
+        h += sdRow('Ȧ (Adot)',         c.adot.toExponential(3) + ' m/s');
+        h += sdRow('e',                c.e.toFixed(10));
+        h += sdRow('M₀',               c.m0_deg.toFixed(6) + '°');
+        h += sdRow('Δn',               c.delta_n.toExponential(3) + ' rad/s');
+        h += sdRow('Δṅ (delta n-dot)', c.delta_n_dot.toExponential(3) + ' rad/s²');
+        h += sdRow('Ω₀',               c.omega0_deg.toFixed(6) + '°');
+        h += sdRow('i₀',               c.i0_deg.toFixed(6) + '°');
+        h += sdRow('ω',                c.omega_deg.toFixed(6) + '°');
+        h += sdRow('dΩ/dt',            c.omega_dot.toExponential(3) + ' rad/s');
+        h += sdRow('IDOT',             c.idot.toExponential(3) + ' rad/s');
+        h += sdRow('Crs',              c.crs.toFixed(4) + ' m');
+        h += sdRow('Cuc',              c.cuc.toExponential(3) + ' rad');
+        h += sdRow('Cus',              c.cus.toExponential(3) + ' rad');
+        h += sdRow('Crc',              c.crc.toFixed(4) + ' m');
+        h += sdRow('Cic',              c.cic.toExponential(3) + ' rad');
+        h += sdRow('Cis',              c.cis.toExponential(3) + ' rad');
+        h += '<div class="sd-sub">Integrity &amp; Health</div>';
+        const satTypeMap2 = {0: 'Reserved', 1: 'GEO', 2: 'IGSO', 3: 'MEO'};
+        h += sdRow('Sat type',         satTypeMap2[c.sat_type] || c.sat_type);
+        h += sdRow('SISAI_oe',         c.sisai_oe.toFixed(0));
+        h += sdRow('SISAI_ocb',        c.sisai_ocb.toFixed(0));
+        h += sdRow('SISMAI',           c.sismai.toFixed(0));
+        h += sdRow('Health',           c.health === 0
+            ? '<span style="color:#00ff88">0 — Healthy</span>'
+            : '<span style="color:#ff5555">' + c.health + ' — Unhealthy</span>');
+        h += sdRow('Source',           'RINEX4 ' + c.rinex_date);
+        h += '</div>';
+        return h;
+    }
+
+    if (data.beidou_cnv2) {
+        html += renderBeidouCnvBlock(data.beidou_cnv2, 'B-CNAV2 (B2a)', 'sd-bds-cnv2', 'cnv2');
+    } else if (sat.constellation === 'BEIDOU') {
+        html += '<div class="sd-section" id="sd-bds-cnv2"><h4>BROADCAST EPHEMERIS — B-CNAV2 (B2a)</h4>' +
+            '<div class="sd-pending">No CNAV2 data for this PRN (typical for GEO sats and BeiDou-2 MEO/IGSO).</div></div>';
+    }
+
+    if (data.beidou_cnv3) {
+        html += renderBeidouCnvBlock(data.beidou_cnv3, 'B-CNAV3 (B2b)', 'sd-bds-cnv3', 'cnv3');
+    } else if (sat.constellation === 'BEIDOU') {
+        html += '<div class="sd-section" id="sd-bds-cnv3"><h4>BROADCAST EPHEMERIS — B-CNAV3 (B2b)</h4>' +
+            '<div class="sd-pending">No CNAV3 data for this PRN (typical for GEO sats and BeiDou-2 MEO/IGSO).</div></div>';
+    }
+
     function renderGalileoBlock(g, signalLabel, anchorId, includeBgdE5b) {
         let h = '<div class="sd-section" id="' + anchorId + '"><h4>BROADCAST EPHEMERIS — ' + signalLabel + '</h4>';
         h += '<div class="sd-sub">Clock &amp; Status</div>';

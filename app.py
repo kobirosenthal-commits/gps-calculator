@@ -36,6 +36,8 @@ rinex_data   = {'ephemeris': {}, 'date': None}
 rinex4_data  = {'ephemeris': {}, 'date': None}
 bei_d_data   = {'ephemeris': {}, 'date': None}  # BeiDou D1/D2 (legacy B1I/B2I/B3I)
 bei_cnv1_data = {'ephemeris': {}, 'date': None}  # BeiDou-3 B-CNAV1 (B1C)
+bei_cnv2_data = {'ephemeris': {}, 'date': None}  # BeiDou-3 B-CNAV2 (B2a)
+bei_cnv3_data = {'ephemeris': {}, 'date': None}  # BeiDou-3 B-CNAV3 (B2b)
 gal_inav_data = {'ephemeris': {}, 'date': None}  # Galileo I/NAV (E1-B, E5b-I)
 gal_fnav_data = {'ephemeris': {}, 'date': None}  # Galileo F/NAV (E5a-I)
 glo_fdma_data = {'ephemeris': {}, 'date': None}  # GLONASS L1OF/L2OF FDMA (state-vector eph)
@@ -178,13 +180,15 @@ def _rinex4_refresh_worker():
     never appeared. The workflow now does the parse in CI and writes small JSONs
     that load in milliseconds. Falls back to streaming the raw file if the
     JSONs are absent (first deploy after this change, or workflow failure)."""
-    global rinex4_data, bei_d_data, bei_cnv1_data, gal_inav_data, gal_fnav_data, glo_fdma_data, rinex4_diag
+    global rinex4_data, bei_d_data, bei_cnv1_data, bei_cnv2_data, bei_cnv3_data, gal_inav_data, gal_fnav_data, glo_fdma_data, rinex4_diag
     import os, traceback
     rinex4_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'gps_rinex4.txt')
     json_targets = [
         ('rinex4_gps_cnav.json', 'rinex4_data',    'GPS CNAV'),
         ('rinex4_bds_d.json',    'bei_d_data',     'BeiDou D1/D2'),
         ('rinex4_bds_cnv1.json', 'bei_cnv1_data',  'BeiDou CNV1'),
+        ('rinex4_bds_cnv2.json', 'bei_cnv2_data',  'BeiDou CNV2'),
+        ('rinex4_bds_cnv3.json', 'bei_cnv3_data',  'BeiDou CNV3'),
         ('rinex4_gal_inav.json', 'gal_inav_data',  'Galileo I/NAV'),
         ('rinex4_glo_fdma.json', 'glo_fdma_data',  'GLONASS FDMA'),
         ('rinex4_gal_fnav.json', 'gal_fnav_data',  'Galileo F/NAV'),
@@ -243,6 +247,8 @@ def _rinex4_refresh_worker():
                     'gal_inav': len(parsed['gal_inav']),
                     'gal_fnav': len(parsed['gal_fnav']),
                     'glo_fdma': len(parsed.get('glo_fdma', {})),
+                    'bds_cnv2': len(parsed.get('bds_cnv2', {})),
+                    'bds_cnv3': len(parsed.get('bds_cnv3', {})),
                 }
                 if parsed['gps_cnav']:
                     rinex4_data = {'ephemeris': parsed['gps_cnav'], 'date': date_str}; loaded = True
@@ -250,6 +256,10 @@ def _rinex4_refresh_worker():
                     bei_d_data = {'ephemeris': parsed['bds_d'], 'date': date_str}; loaded = True
                 if parsed['bds_cnv1']:
                     bei_cnv1_data = {'ephemeris': parsed['bds_cnv1'], 'date': date_str}; loaded = True
+                if parsed.get('bds_cnv2'):
+                    bei_cnv2_data = {'ephemeris': parsed['bds_cnv2'], 'date': date_str}; loaded = True
+                if parsed.get('bds_cnv3'):
+                    bei_cnv3_data = {'ephemeris': parsed['bds_cnv3'], 'date': date_str}; loaded = True
                 if parsed['gal_inav']:
                     gal_inav_data = {'ephemeris': parsed['gal_inav'], 'date': date_str}; loaded = True
                 if parsed['gal_fnav']:
@@ -552,6 +562,52 @@ def satellite_detail():
                 'tx_time':   d['tx_time'],
                 'rinex_date': bei_d_data['date'],
             }
+        for src_data, key in (
+            (bei_cnv2_data, 'beidou_cnv2'),
+            (bei_cnv3_data, 'beidou_cnv3'),
+        ):
+            rec = src_data['ephemeris'].get(prn)
+            if rec:
+                resp[key] = {
+                    'msg_type':    rec['msg_type'],
+                    'toc':         rec['epoch'],
+                    'af0':         rec['af0'],
+                    'af1':         rec['af1'],
+                    'af2':         rec['af2'],
+                    'isc_b2ad':    rec.get('isc_b2ad', 0.0),
+                    'tgd_b1cp':    rec.get('tgd_b1cp', 0.0),
+                    'tgd_b2ap':    rec.get('tgd_b2ap', 0.0),
+                    'sf_b2bi':     rec.get('sf_b2bi', 0.0),
+                    'toe':         rec['toe'],
+                    'top':         rec['top'],
+                    'sqrt_a':      rec['sqrt_a'],
+                    'adot':        rec['adot'],
+                    'e':           rec['e'],
+                    'm0_deg':      math.degrees(rec['m0']),
+                    'delta_n':     rec['delta_n'],
+                    'delta_n_dot': rec['delta_n_dot'],
+                    'omega0_deg':  math.degrees(rec['omega0']),
+                    'i0_deg':      math.degrees(rec['i0']),
+                    'omega_deg':   math.degrees(rec['omega']),
+                    'omega_dot':   rec['omega_dot'],
+                    'idot':        rec['idot'],
+                    'crs':         rec['crs'],
+                    'cuc':         rec['cuc'],
+                    'cus':         rec['cus'],
+                    'crc':         rec['crc'],
+                    'cic':         rec['cic'],
+                    'cis':         rec['cis'],
+                    'sat_type':    rec['sat_type'],
+                    'sisai_oe':    rec['sisai_oe'],
+                    'sisai_ocb':   rec['sisai_ocb'],
+                    'sisai_oc1':   rec['sisai_oc1'],
+                    'sisai_oc2':   rec['sisai_oc2'],
+                    'sismai':      rec['sismai'],
+                    'health':      rec['health'],
+                    'integrity':   rec['integrity'],
+                    'tx_time':     rec['tx_time'],
+                    'rinex_date':  src_data['date'],
+                }
         cnv1 = bei_cnv1_data['ephemeris'].get(prn)
         if cnv1:
             resp['beidou_cnv1'] = {

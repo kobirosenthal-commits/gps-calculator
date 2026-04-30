@@ -514,6 +514,8 @@ def parse_rinex4_combined(line_iter, progress=None):
     gal_inav = {}
     gal_fnav = {}
     glo_fdma = {}
+    bds_cnv2 = {}
+    bds_cnv3 = {}
 
     for ln in it:
         line_count += 1
@@ -587,6 +589,42 @@ def parse_rinex4_combined(line_iter, progress=None):
                     'tgd2': v[23] if len(v) > 23 else 0.0,
                     'tx_time': v[24] if len(v) > 24 else 0.0,
                     'aodc': v[25] if len(v) > 25 else 0.0,
+                }
+        elif sys_letter == 'C' and msg_type in ('CNV2', 'CNV3'):
+            n_lines = 10 if msg_type == 'CNV2' else 9
+            rec = _read_record_from_iter(it, n_lines, epoch_line)
+            if not rec or len(rec['vals']) < 30:
+                continue
+            v = rec['vals']
+            toe = v[8]
+            target = bds_cnv2 if msg_type == 'CNV2' else bds_cnv3
+            existing = target.get(prn)
+            if (not existing) or toe > existing['toe']:
+                target[prn] = {
+                    'prn': prn, 'msg_type': msg_type,
+                    'epoch':  f"{rec['year']:04d}-{rec['month']:02d}-{rec['day']:02d} {rec['hour']:02d}:{rec['minute']:02d}:00",
+                    'af0': rec['af0'], 'af1': rec['af1'], 'af2': rec['af2'],
+                    'adot': v[0], 'crs': v[1], 'delta_n': v[2], 'm0': v[3],
+                    'cuc': v[4], 'e': v[5], 'cus': v[6], 'sqrt_a': v[7],
+                    'toe': toe, 'cic': v[9], 'omega0': v[10], 'cis': v[11],
+                    'i0': v[12], 'crc': v[13], 'omega': v[14], 'omega_dot': v[15],
+                    'idot': v[16], 'delta_n_dot': v[17],
+                    'sat_type': int(v[18]) if len(v) > 18 else 0,
+                    'top': v[19] if len(v) > 19 else 0.0,
+                    'sisai_oe': v[20] if len(v) > 20 else 0.0,
+                    'sisai_ocb': v[21] if len(v) > 21 else 0.0,
+                    'sisai_oc1': v[22] if len(v) > 22 else 0.0,
+                    'sisai_oc2': v[23] if len(v) > 23 else 0.0,
+                    # Per-signal TGD / ISC layout differs slightly between CNV2 (B2a)
+                    # and CNV3 (B2b) — keep raw fields for completeness; UI labels them.
+                    'isc_b2ad':    v[24] if len(v) > 24 else 0.0,
+                    'tgd_b1cp':    v[25] if len(v) > 25 else 0.0,
+                    'tgd_b2ap':    v[26] if len(v) > 26 else 0.0,
+                    'sf_b2bi':     v[27] if len(v) > 27 else 0.0,
+                    'sismai':      v[28] if len(v) > 28 else 0.0,
+                    'health':      int(v[29]) if len(v) > 29 else 0,
+                    'integrity':   int(v[30]) if len(v) > 30 else 0,
+                    'tx_time':     v[35] if len(v) > 35 else 0.0,
                 }
         elif sys_letter == 'C' and msg_type == 'CNV1':
             rec = _read_record_from_iter(it, 10, epoch_line)
@@ -681,6 +719,8 @@ def parse_rinex4_combined(line_iter, progress=None):
         'gal_inav': gal_inav,
         'gal_fnav': gal_fnav,
         'glo_fdma': glo_fdma,
+        'bds_cnv2': bds_cnv2,
+        'bds_cnv3': bds_cnv3,
     }
 
 
