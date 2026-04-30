@@ -1,0 +1,20 @@
+name: Deploy to Fly.io
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'data/**'      # data refreshes from update-tles.yml don't need redeploys
+      - '**.md'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    concurrency: deploy-group
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
