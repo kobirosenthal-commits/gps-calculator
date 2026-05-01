@@ -1482,7 +1482,14 @@ function setSpConstFilter(c) {
         b.classList.toggle('active', b.getAttribute('data-c') === c));
     const currentLabel = document.getElementById('sp-sat-label').textContent;
     spSatList = buildSpList();
-    if (!spSatList.find(s => s.label === currentLabel)) spCurrentIdx = 0;
+    if (!spSatList.find(s => s.label === currentLabel)) {
+        spCurrentIdx = 0;
+        if (spSatList.length) {
+            const first = spSatList[0];
+            loadSpContent(satData[first.label] || first.sat);
+            return;
+        }
+    }
     renderSpSidebar(currentLabel);
     renderSpNav(currentLabel);
 }
