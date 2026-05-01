@@ -2,7 +2,7 @@ name: Update TLEs and RINEX
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   # every 6 hours
+    - cron: '0 * * * *'   # every hour (BKG/NOAA republish hourly)
   workflow_dispatch:          # allow manual trigger
 
 jobs:
