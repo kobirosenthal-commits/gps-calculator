@@ -730,6 +730,36 @@ def rinex_status():
     })
 
 
+@app.route('/api/data-freshness', methods=['GET'])
+def data_freshness():
+    """Return mtimes of the data files so the UI can show 'last updated' tags."""
+    import os
+    base = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+    files = {
+        'gps_lnav':  'gps_rinex2.txt',
+        'gps_cnav':  'rinex4_gps_cnav.json',
+        'bds_d':     'rinex4_bds_d.json',
+        'bds_cnv1':  'rinex4_bds_cnv1.json',
+        'bds_cnv2':  'rinex4_bds_cnv2.json',
+        'bds_cnv3':  'rinex4_bds_cnv3.json',
+        'gal_inav':  'rinex4_gal_inav.json',
+        'gal_fnav':  'rinex4_gal_fnav.json',
+        'glo_fdma':  'rinex4_glo_fdma.json',
+        'tle_gps':   'gps.tle',
+        'tle_glo':   'glo-ops.tle',
+        'tle_bds':   'beidou.tle',
+        'tle_gal':   'galileo.tle',
+    }
+    out = {}
+    for key, fname in files.items():
+        path = os.path.join(base, fname)
+        try:
+            out[key] = int(os.path.getmtime(path))
+        except OSError:
+            out[key] = None
+    return jsonify(out)
+
+
 @app.route('/api/fetch-tles', methods=['POST'])
 def fetch_tles_proxy():
     """Return already-cached TLE data loaded by the background thread.

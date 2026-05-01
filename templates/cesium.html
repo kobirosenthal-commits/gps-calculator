@@ -216,6 +216,11 @@
         .sd-sf-label { font-size: 0.72em; color: #5599cc; margin-top: 1px; }
         .sd-sf-desc { font-size: 0.76em; color: #aac; margin-top: 3px; line-height: 1.35; }
         .tle-box { font-family: monospace; font-size: 0.68em; color: #8aaccc; background: rgba(0,20,50,0.6); padding: 4px 6px; border-radius: 3px; margin: 2px 0; word-break: break-all; line-height: 1.45; }
+        .sd-fresh-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 10px; margin-bottom: 10px; background: rgba(40,80,160,0.10); border: 1px solid #1a3a5c; border-radius: 5px; font-size: 0.72em; }
+        .sd-fresh-banner-lbl { color: #5599cc; letter-spacing: 1px; font-weight: 700; margin-right: 4px; }
+        .sd-fresh-item { color: #aacde0; background: rgba(0,20,50,0.55); padding: 2px 7px; border-radius: 10px; }
+        .sd-fresh-item.sd-fresh-missing { color: #886; }
+        .sd-fresh { color: #5599cc; font-size: 0.85em; font-weight: 400; margin-left: 6px; }
         .sd-pending { color: #3a6a9a; font-size: 0.82em; padding: 10px 0 4px; display: flex; align-items: center; gap: 8px; }
         .sd-pending::before { content: ''; display: inline-block; width: 10px; height: 10px; border: 2px solid #1a3a5c; border-top-color: #5599cc; border-radius: 50%; animation: spin 1.2s linear infinite; flex-shrink: 0; }
 
@@ -1059,6 +1064,42 @@ async function fetchLive() {
 // ── Satellite detail panel ────────────────────────────────────────────
 let skyPlotSats = [];
 let detailRefreshTimer = null;
+let dataFreshness = {};
+
+function fmtAgo(epochSec) {
+    if (!epochSec) return 'unknown';
+    const sec = Math.max(0, Math.floor(Date.now() / 1000 - epochSec));
+    if (sec < 60)        return sec + 's ago';
+    if (sec < 3600)      return Math.floor(sec / 60) + 'm ago';
+    if (sec < 86400)     return Math.floor(sec / 3600) + 'h ago';
+    return Math.floor(sec / 86400) + 'd ago';
+}
+function fmtUpdated(epochSec) {
+    if (!epochSec) return '';
+    const d = new Date(epochSec * 1000);
+    return d.toISOString().slice(0,16).replace('T',' ') + ' UTC';
+}
+function freshTag(key) {
+    const t = dataFreshness[key];
+    if (!t) return '';
+    return `<span class="sd-fresh" title="${fmtUpdated(t)}">⟳ ${fmtAgo(t)}</span>`;
+}
+function buildFreshnessBanner(constellation) {
+    const keys = {
+        GPS:     [['gps_lnav','LNAV'],['gps_cnav','CNAV'],['tle_gps','TLE']],
+        GLONASS: [['glo_fdma','FDMA'],['tle_glo','TLE']],
+        BEIDOU:  [['bds_d','D1/D2'],['bds_cnv1','CNV1'],['bds_cnv2','CNV2'],['bds_cnv3','CNV3'],['tle_bds','TLE']],
+        GALILEO: [['gal_inav','I/NAV'],['gal_fnav','F/NAV'],['tle_gal','TLE']],
+    }[constellation] || [];
+    const parts = keys.map(([k, lbl]) => {
+        const t = dataFreshness[k];
+        if (!t) return `<span class="sd-fresh-item sd-fresh-missing">${lbl}: —</span>`;
+        return `<span class="sd-fresh-item" title="${fmtUpdated(t)}">${lbl}: ${fmtAgo(t)}</span>`;
+    });
+    return `<div class="sd-fresh-banner" style="grid-column:1/-1">
+        <span class="sd-fresh-banner-lbl">DATA FRESHNESS</span>${parts.join('')}
+    </div>`;
+}
 
 const NAV_SF = {
     GPS:     ['Clock correction & SV accuracy','Ephemeris I — Kepler elements','Ephemeris II — Kepler elements','Almanac & ionospheric model','Almanac & satellite health'],
@@ -1559,10 +1600,13 @@ function loadSpContent(sat) {
         rangeKm = ae.range; elev = ae.elev; az = ae.az;
     }
 
-    fetch(`/api/satellite-detail?label=${encodeURIComponent(label)}&constellation=${sat.constellation}`)
-        .then(r => r.json())
-        .then(data => {
-            content.innerHTML = buildSatDetailHtml(data, sat, rangeKm, elev, az);
+    Promise.all([
+        fetch(`/api/satellite-detail?label=${encodeURIComponent(label)}&constellation=${sat.constellation}`).then(r => r.json()),
+        fetch('/api/data-freshness').then(r => r.json()).catch(() => ({}))
+    ])
+        .then(([data, fresh]) => {
+            dataFreshness = fresh || {};
+            content.innerHTML = buildFreshnessBanner(sat.constellation) + buildSatDetailHtml(data, sat, rangeKm, elev, az);
             detailRefreshTimer = setInterval(() => {
                 const el = document.getElementById('sd-sf-display');
                 if (el) el.outerHTML = renderNavBlock(sat.constellation);
