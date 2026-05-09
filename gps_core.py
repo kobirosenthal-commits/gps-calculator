@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from datetime import datetime, timezone
+import re
 import requests
 import requests.packages.urllib3
 requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
@@ -519,30 +520,33 @@ def parse_rinex4_combined(line_iter, progress=None):
     # Iono correction blocks: most recent of each model wins
     iono = {'klobuchar': None, 'nequick': None, 'bdgim': None}
 
+    _FLOAT_RE = re.compile(r'[+-]?\d+\.\d+[eEdD][+-]?\d+')
+    _EPOCH_RE = re.compile(r'\s*(\d{4})\s+(\d{1,2})\s+(\d{1,2})\s+(\d{1,2})\s+(\d{1,2})\s+(\d{1,2})')
+
     def _grab_iono(it, sys_letter, model):
-        # ION blocks have exactly 2 continuation lines: an epoch line with the
-        # first 3 values, and a second line with remaining coefficients.
-        # BDGIM has 3 continuation lines (more coefficients).
+        """RINEX 4 ION block: epoch line + N continuation lines. Numbers may be
+        run together when negative (no space before the minus), so parse via
+        regex rather than split()."""
         floats = []
         epoch = None
-        n_lines = 3 if (sys_letter == 'C' and model == 'CNVX') else 2
+        # Klobuchar (G LNAV, C D1D2) and BDGIM (C CNVX) span 3 continuation lines.
+        # NeQuick-G (E IFNV/INAV/FNAV) spans 2.
+        n_lines = 2 if sys_letter == 'E' else 3
         for _ in range(n_lines):
             try:
                 pos = next(it)
             except StopIteration:
                 break
             if pos.startswith('> '):
-                break  # safety: hit next record
+                break
             if epoch is None:
+                m = _EPOCH_RE.match(pos)
+                if m:
+                    epoch = ' '.join(m.groups())
+                    pos = pos[m.end():]
+            for tok in _FLOAT_RE.findall(pos.replace('D', 'E').replace('d', 'e')):
                 try:
-                    parts = pos.replace('D', 'E').replace('d', 'e').split()
-                    epoch = ' '.join(parts[:6])
-                    floats.extend(float(x) for x in parts[6:])
-                except (ValueError, IndexError):
-                    pass
-            else:
-                try:
-                    floats.extend(float(x) for x in pos.replace('D', 'E').replace('d', 'e').split())
+                    floats.append(float(tok))
                 except ValueError:
                     pass
         return {'epoch': epoch, 'sys': sys_letter, 'model': model, 'values': floats}
