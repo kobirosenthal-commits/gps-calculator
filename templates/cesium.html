@@ -1735,6 +1735,9 @@ function buildSatDetailHtml(data, sat, rangeKm, elev, az) {
             '<div class="sd-pending">RINEX-4 data loading from BKG — auto-refreshing…</div></div>';
     }
 
+    if (sat.constellation === 'GPS' && data.cnav) {
+        html += renderCnavBits(data.cnav);
+    }
     if (sat.constellation === 'GLONASS' && data.glonass_fdma) {
         html += renderGlonassBits(data.glonass_fdma);
     }
@@ -2084,6 +2087,7 @@ function loadSpContent(sat) {
                 if (el) el.outerHTML = renderNavBlock(sat.constellation);
             }, 1000);
             if (sat.constellation === 'GPS' && data.ephemeris) startLnavBitsTicker();
+            if (sat.constellation === 'GPS' && data.cnav) startConstellationBitsTicker('cnav', 12, 3);
             if (sat.constellation === 'GLONASS' && data.glonass_fdma) startConstellationBitsTicker('glo', 2, 15);
             if (sat.constellation === 'BEIDOU'  && data.beidou_d)     startConstellationBitsTicker('bds', 6, 3);
             if (sat.constellation === 'GALILEO' && data.galileo_inav) startConstellationBitsTicker('gal', 1, 5);
@@ -2946,6 +2950,135 @@ function rerenderSfPage(sf, page) {
         title.firstChild.textContent = main + ' ';
         title.appendChild(live);  // keep live span at the end
     }
+}
+
+// ── GPS CNAV (L2C / L5) bit decoder ───────────────────────────────────
+// CNAV per IS-GPS-200 §30: 300-bit messages, 12-second period (L5) /
+// 24-second period (L2C, half-rate). Common header (38 bits) +
+// message-type-specific payload (238 bits) + CRC-24Q. Most useful MTs:
+//   MT 10: Ephemeris 1 (clock-related orbit elements + health)
+//   MT 11: Ephemeris 2 (Ω0, i0, C-corrections, etc.)
+//   MT 30: Clock + ionosphere + group delays + ISCs
+function buildCnavValues(c) {
+    const k = (ionoData && ionoData.klobuchar && ionoData.klobuchar.values) || [];
+    return {
+        prn:           c.prn || 0,
+        tow17:         0,
+        wn:            (c.gps_week || 0) & 0x1FFF,
+        l1_health: 0, l2_health: 0, l5_health: 0,
+        top:           c.top || 0,
+        ura_ed:        c.urai_ed || 0,
+        ura_ned0:      c.urai_oe || 0, ura_ned1: 0, ura_ned2: 0,
+        toe:           c.toe || 0,
+        delta_a:       0,
+        a_dot:         c.adot || 0,
+        delta_n:       c.delta_n || 0,
+        delta_n_dot:   c.delta_n_dot || 0,
+        m0_semi:       (c.m0_deg || 0) / 180,
+        e_eph:         c.e || 0,
+        omega_semi:    (c.omega_deg || 0) / 180,
+        omega0_semi:   (c.omega0_deg || 0) / 180,
+        delta_i:       ((c.i0_deg || 55) / 180) - 0.30,
+        cis: c.cis || 0, cic: c.cic || 0,
+        crs: c.crs || 0, crc: c.crc || 0,
+        cus: c.cus || 0, cuc: c.cuc || 0,
+        toc:           c.toe || 0,
+        af0: c.af0,    af1: c.af1,    af2: c.af2,
+        tgd: c.tgd,
+        isc_l1ca: c.isc_l1ca, isc_l2c: c.isc_l2c,
+        isc_l5i5: c.isc_l5i5, isc_l5q5: c.isc_l5q5,
+        alpha0: k[0] || 0, alpha1: k[1] || 0, alpha2: k[2] || 0, alpha3: k[3] || 0,
+        beta0:  k[4] || 0, beta1:  k[5] || 0, beta2:  k[6] || 0, beta3:  k[7] || 0,
+        wn_op:  (c.gps_week || 0) & 0xFF,
+    };
+}
+
+function _cnavHdr(mt) {
+    return [
+        {start: 0,  len: 8,  name: 'PREAMBLE',     fixed: 0x8B, color: '#666'},
+        {start: 8,  len: 6,  name: 'PRN',          fromKey: 'prn', color: '#f8c'},
+        {start: 14, len: 6,  name: 'message type', fixed: mt, color: '#fa6'},
+        {start: 20, len: 17, name: 'TOW count',    fromKey: 'tow17', color: '#88f'},
+        {start: 37, len: 1,  name: 'alert',        fixed: 0, color: '#666'},
+    ];
+}
+
+function cnavMessageFields(mt) {
+    const hdr = _cnavHdr(mt);
+    if (mt === 10) return [...hdr,
+        {start: 38,  len: 13, name: 'WN',          fromKey: 'wn', color: '#0f8'},
+        {start: 51,  len: 1,  name: 'L1 health',   fromKey: 'l1_health', color: '#f55'},
+        {start: 52,  len: 1,  name: 'L2 health',   fromKey: 'l2_health', color: '#f55'},
+        {start: 53,  len: 1,  name: 'L5 health',   fromKey: 'l5_health', color: '#f55'},
+        {start: 54,  len: 11, name: 'top',         fromKey: 'top', scale: 1/300, color: '#88f'},
+        {start: 65,  len: 5,  name: 'URA_ED',      fromKey: 'ura_ed', signed: true, color: '#fa6'},
+        {start: 70,  len: 11, name: 'toe',         fromKey: 'toe', scale: 1/300, color: '#88f'},
+        {start: 81,  len: 26, name: 'ΔA',          fromKey: 'delta_a', scale: Math.pow(2,9), signed: true, color: '#0f8'},
+        {start: 107, len: 25, name: 'Adot',        fromKey: 'a_dot', scale: Math.pow(2,21), signed: true, color: '#0f8'},
+        {start: 132, len: 17, name: 'Δn₀',         fromKey: 'delta_n', scale: Math.pow(2,44) / Math.PI, signed: true, color: '#fc4'},
+        {start: 149, len: 23, name: 'Δn₀_dot',     fromKey: 'delta_n_dot', scale: Math.pow(2,57) / Math.PI, signed: true, color: '#fc4'},
+        {start: 172, len: 33, name: 'M₀',          fromKey: 'm0_semi', scale: Math.pow(2,32), signed: true, color: '#0f8'},
+        {start: 205, len: 33, name: 'e',           fromKey: 'e_eph', scale: Math.pow(2,34), color: '#0f8'},
+        {start: 238, len: 33, name: 'ω',           fromKey: 'omega_semi', scale: Math.pow(2,32), signed: true, color: '#0f8'},
+        {start: 271, len: 1,  name: 'ISF',         fixed: 0, color: '#cf6'},
+        {start: 272, len: 1,  name: 'L2C phasing', fixed: 0, color: '#cf6'},
+        {start: 273, len: 3,  name: 'reserved',    fixed: 0, color: '#444'},
+        {start: 276, len: 24, name: 'CRC-24Q',     fixed: 0, color: '#333', isParity: true},
+    ];
+    if (mt === 11) return [...hdr,
+        {start: 38,  len: 11, name: 'toe',         fromKey: 'toe', scale: 1/300, color: '#88f'},
+        {start: 49,  len: 33, name: 'Ω₀',          fromKey: 'omega0_semi', scale: Math.pow(2,32), signed: true, color: '#0f8'},
+        {start: 82,  len: 17, name: 'Δi',          fromKey: 'delta_i', scale: Math.pow(2,44), signed: true, color: '#fc4'},
+        {start: 99,  len: 15, name: 'i₀ rate',     fromKey: 'idot_semi', scale: Math.pow(2,44) / Math.PI, signed: true, color: '#fc4'},
+        {start: 114, len: 16, name: 'Cis',         fromKey: 'cis', scale: Math.pow(2,30), signed: true, color: '#fc4'},
+        {start: 130, len: 16, name: 'Cic',         fromKey: 'cic', scale: Math.pow(2,30), signed: true, color: '#fc4'},
+        {start: 146, len: 24, name: 'Crs',         fromKey: 'crs', scale: Math.pow(2,8),  signed: true, color: '#fc4'},
+        {start: 170, len: 24, name: 'Crc',         fromKey: 'crc', scale: Math.pow(2,8),  signed: true, color: '#fc4'},
+        {start: 194, len: 21, name: 'Cus',         fromKey: 'cus', scale: Math.pow(2,30), signed: true, color: '#fc4'},
+        {start: 215, len: 21, name: 'Cuc',         fromKey: 'cuc', scale: Math.pow(2,30), signed: true, color: '#fc4'},
+        {start: 236, len: 40, name: 'reserved',    fixed: 0, color: '#444'},
+        {start: 276, len: 24, name: 'CRC-24Q',     fixed: 0, color: '#333', isParity: true},
+    ];
+    // mt === 30: Clock + iono + group delays
+    return [...hdr,
+        {start: 38,  len: 11, name: 'top',         fromKey: 'top', scale: 1/300, color: '#88f'},
+        {start: 49,  len: 5,  name: 'URA_NED0',    fromKey: 'ura_ned0', signed: true, color: '#fa6'},
+        {start: 54,  len: 3,  name: 'URA_NED1',    fromKey: 'ura_ned1', color: '#fa6'},
+        {start: 57,  len: 3,  name: 'URA_NED2',    fromKey: 'ura_ned2', color: '#fa6'},
+        {start: 60,  len: 11, name: 'toc',         fromKey: 'toc', scale: 1/300, color: '#88f'},
+        {start: 71,  len: 26, name: 'af₀',         fromKey: 'af0', scale: Math.pow(2,35), signed: true, color: '#fa6'},
+        {start: 97,  len: 20, name: 'af₁',         fromKey: 'af1', scale: Math.pow(2,48), signed: true, color: '#fa6'},
+        {start: 117, len: 10, name: 'af₂',         fromKey: 'af2', scale: Math.pow(2,60), signed: true, color: '#fa6'},
+        {start: 127, len: 13, name: 'TGD',         fromKey: 'tgd', scale: Math.pow(2,35), signed: true, color: '#fc4'},
+        {start: 140, len: 13, name: 'ISC L1C/A',   fromKey: 'isc_l1ca', scale: Math.pow(2,35), signed: true, color: '#fa6'},
+        {start: 153, len: 13, name: 'ISC L2C',     fromKey: 'isc_l2c', scale: Math.pow(2,35), signed: true, color: '#fa6'},
+        {start: 166, len: 13, name: 'ISC L5 I5',   fromKey: 'isc_l5i5', scale: Math.pow(2,35), signed: true, color: '#fa6'},
+        {start: 179, len: 13, name: 'ISC L5 Q5',   fromKey: 'isc_l5q5', scale: Math.pow(2,35), signed: true, color: '#fa6'},
+        {start: 192, len: 8,  name: 'α₀',          fromKey: 'alpha0', scale: Math.pow(2,30), signed: true, color: '#0fa'},
+        {start: 200, len: 8,  name: 'α₁',          fromKey: 'alpha1', scale: Math.pow(2,27), signed: true, color: '#0fa'},
+        {start: 208, len: 8,  name: 'α₂',          fromKey: 'alpha2', scale: Math.pow(2,24), signed: true, color: '#0fa'},
+        {start: 216, len: 8,  name: 'α₃',          fromKey: 'alpha3', scale: Math.pow(2,24), signed: true, color: '#0fa'},
+        {start: 224, len: 8,  name: 'β₀',          fromKey: 'beta0',  scale: 1/Math.pow(2,11), signed: true, color: '#0c8'},
+        {start: 232, len: 8,  name: 'β₁',          fromKey: 'beta1',  scale: 1/Math.pow(2,14), signed: true, color: '#0c8'},
+        {start: 240, len: 8,  name: 'β₂',          fromKey: 'beta2',  scale: 1/Math.pow(2,16), signed: true, color: '#0c8'},
+        {start: 248, len: 8,  name: 'β₃',          fromKey: 'beta3',  scale: 1/Math.pow(2,16), signed: true, color: '#0c8'},
+        {start: 256, len: 8,  name: 'WN_op',       fromKey: 'wn_op', color: '#0f8'},
+        {start: 264, len: 12, name: 'reserved',    fixed: 0, color: '#444'},
+        {start: 276, len: 24, name: 'CRC-24Q',     fixed: 0, color: '#333', isParity: true},
+    ];
+}
+
+function renderCnavBits(c) {
+    return renderConstellationBitsSection({
+        sysName: 'GPS CNAV (3 message types × 300 bits, L2C / L5)',
+        sysKey: 'cnav', wordPrefix: 'M',
+        bitsPerBlock: 300, bitsPerWord: 60, numBlocks: 3,
+        vals: buildCnavValues(c),
+        blockTitle: i => ['Message Type 10 — Ephemeris 1','Message Type 11 — Ephemeris 2','Message Type 30 — Clock + Iono + ISCs'][i],
+        getFields: i => cnavMessageFields([10, 11, 30][i]),
+        description: 'GPS CNAV broadcast on L2C (25 sps) and L5 (50 sps). Each message is 300 bits = 12 s on L5 / 24 s on L2C. Message type 10 carries the first half of ephemeris + health; MT 11 carries the second half + C-corrections; MT 30 carries clock, ionosphere (Klobuchar α/β), TGD, and inter-signal corrections (ISCs).',
+        liveTrack: { period: 12, count: 3, sysKey: 'cnav' },
+    });
 }
 
 // ── GLONASS / BeiDou / Galileo subframe bit decoders ─────────────────
@@ -3910,6 +4043,10 @@ window.validateBitModels = function () {
     [1, 25].forEach(p => {
         const f = buildSf5Page(p);
         reports.push(_validateFields(`GPS LNAV SF5 page ${p}`, f, 300));
+    });
+    // GPS CNAV
+    [10, 11, 30].forEach(mt => {
+        reports.push(_validateFields(`GPS CNAV MT${mt}`, cnavMessageFields(mt), 300));
     });
     // GLONASS
     for (let s = 1; s <= 15; s++) {
