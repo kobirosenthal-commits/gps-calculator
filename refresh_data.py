@@ -152,6 +152,12 @@ def reparse_rinex4_jsons(dt, log):
             json.dump({'ephemeris': eph_str, 'date': date_str}, f)
         log(f"  JSON OK: {fname} ({len(eph)} PRNs)")
         out[fname] = len(eph)
+    iono = parsed.get('iono') or {}
+    if any(iono.values()):
+        with open(os.path.join(DATA_DIR, 'rinex4_iono.json'), 'w', encoding='utf-8') as f:
+            json.dump({'iono': iono, 'date': date_str}, f)
+        log(f"  JSON OK: rinex4_iono.json (klobuchar/nequick/bdgim)")
+        out['rinex4_iono.json'] = sum(1 for v in iono.values() if v)
     return out
 
 

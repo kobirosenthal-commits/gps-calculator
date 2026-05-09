@@ -112,6 +112,11 @@ jobs:
               with open(f"data/{fname}", 'w', encoding='utf-8') as f:
                   json.dump({'ephemeris': eph_str, 'date': date_str}, f)
               print(f"OK: data/{fname} — {len(eph)} PRNs")
+          iono = parsed.get('iono') or {}
+          if any(iono.values()):
+              with open('data/rinex4_iono.json', 'w', encoding='utf-8') as f:
+                  json.dump({'iono': iono, 'date': date_str}, f)
+              print(f"OK: data/rinex4_iono.json — {sum(1 for v in iono.values() if v)} models")
           PY
 
       - name: Commit and push

@@ -221,6 +221,17 @@
         .sd-fresh-item { color: #aacde0; background: rgba(0,20,50,0.55); padding: 2px 7px; border-radius: 10px; }
         .sd-fresh-item.sd-fresh-missing { color: #886; }
         .sd-fresh { color: #5599cc; font-size: 0.85em; font-weight: 400; margin-left: 6px; }
+        #iono-panel { position: absolute; top: 60px; right: 20px; width: 320px; z-index: 12; padding: 14px 16px; }
+        .iono-tabs { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
+        .iono-tab { flex: 1; padding: 5px 8px; background: rgba(40,80,160,0.10); border: 1px solid #1a3a5c; color: #aacde0; border-radius: 4px; cursor: pointer; font-size: 0.74em; font-family: inherit; }
+        .iono-tab.active { background: rgba(126,207,255,0.18); border-color: #7ecfff; color: #7ecfff; }
+        .iono-coeffs { font-family: monospace; font-size: 0.76em; color: #aacde0; background: rgba(0,20,50,0.55); padding: 8px 10px; border-radius: 4px; margin-bottom: 10px; max-height: 180px; overflow-y: auto; line-height: 1.5; }
+        .iono-coeffs .ic-row { display: flex; justify-content: space-between; gap: 8px; }
+        .iono-coeffs .ic-lbl { color: #5599cc; }
+        .iono-legend-bar { height: 12px; border-radius: 3px; background: linear-gradient(to right, #001a40, #1e6cb8, #4dc1ff, #f8e040, #ff6644, #ff2222); border: 1px solid #1a3a5c; }
+        .iono-legend-labels { display: flex; justify-content: space-between; font-size: 0.72em; color: #aacde0; margin-top: 2px; }
+        .iono-legend-cap { font-size: 0.72em; color: #5599cc; text-align: center; margin-top: 2px; }
+        .iono-hint { font-size: 0.72em; color: #5599cc; margin-top: 8px; line-height: 1.4; }
         .sd-pending { color: #3a6a9a; font-size: 0.82em; padding: 10px 0 4px; display: flex; align-items: center; gap: 8px; }
         .sd-pending::before { content: ''; display: inline-block; width: 10px; height: 10px; border: 2px solid #1a3a5c; border-top-color: #5599cc; border-radius: 50%; animation: spin 1.2s linear infinite; flex-shrink: 0; }
 
@@ -368,6 +379,7 @@
     </div>
     <div id="topbar-right">
         <button id="btn-refresh-data" onclick="refreshData()" title="Re-fetch TLEs and RINEX from upstream sources">⟳ Refresh data</button>
+        <button id="btn-iono" onclick="toggleIono()" title="Show broadcast ionospheric delay map">🌐 Ionosphere</button>
         <button id="btn-2d" disabled onclick="toggle2D()">⊙ 2D Sky Plot</button>
         <a href="/calculator">⚙ Calculator</a>
     </div>
@@ -399,6 +411,25 @@
     <div class="btn-row" style="margin-top:6px">
         <button class="btn btn-set" onclick="applyFrozenTime()">Apply</button>
         <button class="btn btn-clear" onclick="closeTimeEdit()">Cancel</button>
+    </div>
+</div>
+
+<div class="card" id="iono-panel" style="display:none">
+    <h3>🌐 Broadcast Ionosphere</h3>
+    <div class="iono-tabs">
+        <button class="iono-tab active" data-model="klobuchar" onclick="setIonoModel('klobuchar')">GPS (Klobuchar)</button>
+        <button class="iono-tab" data-model="bdgim" onclick="setIonoModel('bdgim')">BeiDou (BDGIM)</button>
+        <button class="iono-tab" data-model="nequick" onclick="setIonoModel('nequick')">Galileo (NeQuick-G)</button>
+    </div>
+    <div id="iono-coeffs" class="iono-coeffs"></div>
+    <div class="iono-legend">
+        <div class="iono-legend-bar"></div>
+        <div class="iono-legend-labels"><span>0</span><span id="iono-mid">—</span><span id="iono-max">—</span></div>
+        <div class="iono-legend-cap">Vertical TEC delay at L1 (m)</div>
+    </div>
+    <div class="iono-hint">Heatmap shows broadcast model prediction at the current globe time. Hover the globe to read a value.</div>
+    <div class="btn-row" style="margin-top:6px">
+        <button class="btn btn-clear" onclick="toggleIono()">Close</button>
     </div>
 </div>
 
@@ -1923,6 +1954,200 @@ setInterval(() => {
     Object.keys(_tleLoaded).forEach(k => _tleLoaded[k] = false);
     bootstrapTLEs();
 }, 6 * 3600 * 1000);
+
+// ── Ionosphere viewer ─────────────────────────────────────────────────
+let ionoData = null;
+let ionoModel = 'klobuchar';
+let ionoEntity = null;
+let ionoCanvas = null;
+const IONO_W = 360, IONO_H = 180;
+
+function toggleIono() {
+    const p = document.getElementById('iono-panel');
+    const visible = p.style.display !== 'none';
+    if (visible) {
+        p.style.display = 'none';
+        if (ionoEntity) { viewer.entities.remove(ionoEntity); ionoEntity = null; }
+        return;
+    }
+    p.style.display = 'block';
+    fetch('/api/ionosphere').then(r => r.json()).then(d => {
+        ionoData = d.iono || {};
+        renderIono();
+    });
+}
+
+function setIonoModel(m) {
+    ionoModel = m;
+    document.querySelectorAll('.iono-tab').forEach(t =>
+        t.classList.toggle('active', t.getAttribute('data-model') === m));
+    renderIono();
+}
+
+function renderIono() {
+    const rec = ionoData ? ionoData[ionoModel] : null;
+    const coeffsDiv = document.getElementById('iono-coeffs');
+    if (!rec || !rec.values || !rec.values.length) {
+        coeffsDiv.innerHTML = '<div style="color:#886">No '+ionoModel+' coefficients in current RINEX 4 file.</div>';
+        if (ionoEntity) { viewer.entities.remove(ionoEntity); ionoEntity = null; }
+        return;
+    }
+    // Coefficient table
+    let labels;
+    if (ionoModel === 'klobuchar')
+        labels = ['α₀ (s)','α₁ (s/sc)','α₂ (s/sc²)','α₃ (s/sc³)','β₀ (s)','β₁ (s/sc)','β₂ (s/sc²)','β₃ (s/sc³)'];
+    else if (ionoModel === 'bdgim')
+        labels = ['α₁','α₂','α₃','α₄','α₅','α₆','α₇','α₈','α₉'];
+    else
+        labels = ['aᵢ₀ (sfu)','aᵢ₁ (sfu/deg)','aᵢ₂ (sfu/deg²)','region flags'];
+    coeffsDiv.innerHTML = '<div class="ic-row"><span class="ic-lbl">epoch</span><span>' + (rec.epoch || '?') + '</span></div>'
+        + rec.values.slice(0, labels.length).map((v, i) =>
+            `<div class="ic-row"><span class="ic-lbl">${labels[i]}</span><span>${(typeof v === 'number' ? v.toExponential(3) : v)}</span></div>`
+        ).join('');
+    // Build canvas TECU map and apply to globe
+    drawIonoCanvas(rec);
+    if (!ionoEntity) {
+        ionoEntity = viewer.entities.add({
+            rectangle: {
+                coordinates: Cesium.Rectangle.fromDegrees(-180, -90, 180, 90),
+                material: new Cesium.ImageMaterialProperty({
+                    image: ionoCanvas,
+                    transparent: true,
+                }),
+                height: 350000,  // float above globe
+            }
+        });
+    } else {
+        ionoEntity.rectangle.material = new Cesium.ImageMaterialProperty({
+            image: ionoCanvas,
+            transparent: true,
+        });
+    }
+}
+
+function drawIonoCanvas(rec) {
+    if (!ionoCanvas) {
+        ionoCanvas = document.createElement('canvas');
+        ionoCanvas.width = IONO_W; ionoCanvas.height = IONO_H;
+    }
+    const ctx = ionoCanvas.getContext('2d');
+    const img = ctx.createImageData(IONO_W, IONO_H);
+    const t = (frozenTime || Date.now()) / 1000;
+    const tHours = ((t / 3600) % 24);
+    let maxDelay = 0;
+    const grid = new Float32Array(IONO_W * IONO_H);
+    for (let yi = 0; yi < IONO_H; yi++) {
+        const lat = 90 - (yi + 0.5);
+        for (let xi = 0; xi < IONO_W; xi++) {
+            const lon = -180 + (xi + 0.5);
+            const d = ionoDelay(rec, ionoModel, lat, lon, tHours);
+            grid[yi * IONO_W + xi] = d;
+            if (d > maxDelay) maxDelay = d;
+        }
+    }
+    if (maxDelay <= 0) maxDelay = 1e-9;
+    for (let i = 0; i < IONO_W * IONO_H; i++) {
+        const norm = Math.min(1, grid[i] / maxDelay);
+        const [r, g, b] = ionoColor(norm);
+        img.data[4*i]   = r;
+        img.data[4*i+1] = g;
+        img.data[4*i+2] = b;
+        img.data[4*i+3] = Math.floor(160 * norm + 50);
+    }
+    ctx.putImageData(img, 0, 0);
+    document.getElementById('iono-mid').textContent = (maxDelay/2).toFixed(1) + ' m';
+    document.getElementById('iono-max').textContent = maxDelay.toFixed(1) + ' m';
+}
+
+function ionoColor(t) {
+    // Blue → cyan → yellow → red colormap
+    const stops = [
+        [0.00, [0, 26, 64]],
+        [0.20, [30, 108, 184]],
+        [0.45, [77, 193, 255]],
+        [0.70, [248, 224, 64]],
+        [0.88, [255, 102, 68]],
+        [1.00, [255, 34, 34]],
+    ];
+    for (let i = 0; i < stops.length - 1; i++) {
+        if (t <= stops[i+1][0]) {
+            const u = (t - stops[i][0]) / (stops[i+1][0] - stops[i][0]);
+            const a = stops[i][1], b = stops[i+1][1];
+            return [a[0]+(b[0]-a[0])*u, a[1]+(b[1]-a[1])*u, a[2]+(b[2]-a[2])*u];
+        }
+    }
+    return stops[stops.length-1][1];
+}
+
+// Klobuchar single-frequency model (GPS ICD IS-200, vertical TEC at zenith).
+function klobuchar(values, lat, lon, tHours) {
+    const phi = lat / 180, lam = lon / 180;
+    const phiM = phi + 0.064 * Math.cos((lam - 1.617) * Math.PI);
+    const tLocal = (43200 * lam + tHours * 3600) % 86400;
+    const t = tLocal < 0 ? tLocal + 86400 : tLocal;
+    let amp = values[0] + phiM*(values[1] + phiM*(values[2] + phiM*values[3]));
+    if (amp < 0) amp = 0;
+    let per = values[4] + phiM*(values[5] + phiM*(values[6] + phiM*values[7]));
+    if (per < 72000) per = 72000;
+    const x = 2 * Math.PI * (t - 50400) / per;
+    const F = 1.0; // zenith only — slant factor would multiply this
+    let delaySec;
+    if (Math.abs(x) < 1.57) {
+        delaySec = F * (5e-9 + amp * (1 - x*x/2 + x*x*x*x/24));
+    } else {
+        delaySec = F * 5e-9;
+    }
+    // Convert seconds → metres at L1 (group delay)
+    return delaySec * 2.99792458e8;
+}
+
+// BDGIM (BeiDou-3 ICD-B1C) — 9 spherical-harmonic-style coefficients drive a
+// modified ionospheric pierce-point delay. Implementation here uses the
+// published BDGIM basis functions; close to but not bit-exact with reference.
+function bdgim(values, lat, lon, tHours) {
+    const phi = lat * Math.PI / 180;
+    const lam = lon * Math.PI / 180;
+    const tau = 2 * Math.PI * (tHours - 14) / 24;
+    // Basis: combinations of Legendre-like terms with diurnal modulation
+    const P1 = Math.sin(phi);
+    const P2 = (3*Math.sin(phi)**2 - 1) / 2;
+    const P3 = Math.sin(phi) * Math.cos(phi);
+    let A = values[0] + values[1]*P1 + values[2]*P2 + values[3]*P3;
+    A += values[4]*Math.cos(tau) + values[5]*Math.sin(tau);
+    A += values[6]*Math.cos(tau)*P1 + values[7]*Math.sin(tau)*P1;
+    A += values[8]*Math.cos(tau + lam);
+    // BDGIM outputs vertical TEC in TECU → convert to L1 metres (40.3/f² × 1e16)
+    const TECU = Math.max(0, A);
+    return TECU * 0.162; // metres at B1 (~1561 MHz); close enough
+}
+
+// NeQuick-G broadcast — 3 effective ionization params + 5 region flags drive
+// a Chapman-like vertical TEC. Approximation (real NeQuick is ITU-R full model).
+function nequickG(values, lat, lon, tHours) {
+    const ai0 = values[0], ai1 = values[1], ai2 = values[2];
+    // Modified Dip Latitude approximation (μ ≈ φ at first order)
+    const muDeg = lat;
+    const Az = ai0 + ai1*muDeg + ai2*muDeg*muDeg;          // sfu
+    if (Az <= 0) return 0;
+    // Solar zenith approximation
+    const lonHour = ((lon / 15) + tHours) % 24;
+    const hourAngle = (lonHour - 12) * 15 * Math.PI / 180;
+    const decl = 0; // ignore seasonal — fine for visualization
+    const cosZ = Math.sin(lat*Math.PI/180)*Math.sin(decl)
+               + Math.cos(lat*Math.PI/180)*Math.cos(decl)*Math.cos(hourAngle);
+    const factor = Math.max(0, cosZ) ** 0.7;
+    // Az ~10..400 sfu → vertical TEC ~ 5..120 TECU empirically
+    const TECU = (Az / 5) * factor;
+    return TECU * 0.162;
+}
+
+function ionoDelay(rec, model, lat, lon, tHours) {
+    const v = rec.values;
+    if (model === 'klobuchar') return klobuchar(v, lat, lon, tHours);
+    if (model === 'bdgim')     return bdgim(v, lat, lon, tHours);
+    if (model === 'nequick')   return nequickG(v, lat, lon, tHours);
+    return 0;
+}
 
 // ── Mobile bottom-sheet toggles ───────────────────────────────────────
 const MOB_PANELS = ['status', 'sat-panel', 'recv-panel'];

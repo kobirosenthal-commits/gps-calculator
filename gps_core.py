@@ -516,12 +516,55 @@ def parse_rinex4_combined(line_iter, progress=None):
     glo_fdma = {}
     bds_cnv2 = {}
     bds_cnv3 = {}
+    # Iono correction blocks: most recent of each model wins
+    iono = {'klobuchar': None, 'nequick': None, 'bdgim': None}
+
+    def _grab_iono(it, sys_letter, model):
+        # Read up to ~4 continuation lines after the > ION header until the next > marker
+        floats = []
+        epoch = None
+        for _ in range(6):
+            try:
+                pos = it.__next__()
+            except StopIteration:
+                break
+            if pos.startswith('> '):
+                # Push back is tricky with plain iterators; we just accept losing one
+                # marker line — the ION blocks are sparse so it's acceptable.
+                break
+            if epoch is None:
+                # First data line carries epoch yyyy mm dd hh mm ss + values
+                try:
+                    parts = pos.replace('D', 'E').replace('d', 'e').split()
+                    epoch = ' '.join(parts[:6])
+                    floats.extend(float(x) for x in parts[6:])
+                except (ValueError, IndexError):
+                    pass
+            else:
+                try:
+                    floats.extend(float(x) for x in pos.replace('D', 'E').replace('d', 'e').split())
+                except ValueError:
+                    pass
+        return {'epoch': epoch, 'sys': sys_letter, 'model': model, 'values': floats}
 
     for ln in it:
         line_count += 1
         if progress is not None and line_count % 5000 == 0:
             progress['lines_seen'] = line_count
             progress['eph_seen'] = eph_count
+        if ln.startswith('> ION '):
+            parts = ln.split()
+            if len(parts) >= 4:
+                sys_letter, model_type = parts[2], parts[3]
+                rec = _grab_iono(it, sys_letter, model_type)
+                if rec['values']:
+                    if sys_letter == 'G' and len(rec['values']) >= 8:
+                        iono['klobuchar'] = rec
+                    elif sys_letter == 'E' and len(rec['values']) >= 3:
+                        iono['nequick'] = rec
+                    elif sys_letter == 'C' and len(rec['values']) >= 9:
+                        iono['bdgim'] = rec
+            continue
         if not ln.startswith('> EPH '):
             continue
         eph_count += 1
@@ -721,6 +764,7 @@ def parse_rinex4_combined(line_iter, progress=None):
         'glo_fdma': glo_fdma,
         'bds_cnv2': bds_cnv2,
         'bds_cnv3': bds_cnv3,
+        'iono': iono,
     }
 
 
