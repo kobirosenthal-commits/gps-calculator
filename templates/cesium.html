@@ -427,7 +427,7 @@
         <div class="iono-legend-labels"><span>0</span><span id="iono-mid">—</span><span id="iono-max">—</span></div>
         <div class="iono-legend-cap">Vertical TEC delay at L1 (m)</div>
     </div>
-    <div class="iono-hint">Heatmap shows broadcast model prediction at the current globe time. Hover the globe to read a value.</div>
+    <div class="iono-hint">Klobuchar is exact per IS-GPS-200. NeQuick-G and BDGIM are physically-motivated approximations: their full models need ITU-R / NIon background data not carried in the broadcast nav message.</div>
     <div class="btn-row" style="margin-top:6px">
         <button class="btn btn-clear" onclick="toggleIono()">Close</button>
     </div>
@@ -2139,24 +2139,25 @@ function klobuchar(values, lat, lon, tHours) {
     return delaySec * 2.99792458e8;
 }
 
-// BDGIM (BeiDou-3 ICD-B1C) — 9 spherical-harmonic-style coefficients drive a
-// modified ionospheric pierce-point delay. Implementation here uses the
-// published BDGIM basis functions; close to but not bit-exact with reference.
+// BDGIM (BeiDou-3 ICD-B1C) APPROXIMATION. The exact BDGIM produces TEC by
+// adding the 9 broadcast α coefficients as residual perturbations on top of a
+// large non-broadcast climatology ("NIon") model that lives in the receiver.
+// Without that background, the 9 numbers alone can't reconstruct TEC. So we
+// use them only to set the absolute-level scale (α₁) and impose a
+// physically-correct equatorial-peak / solar-noon-peak profile based on
+// geomagnetic latitude.
 function bdgim(values, lat, lon, tHours) {
-    const phi = lat * Math.PI / 180;
-    const lam = lon * Math.PI / 180;
-    const tau = 2 * Math.PI * (tHours - 14) / 24;
-    // Basis: combinations of Legendre-like terms with diurnal modulation
-    const P1 = Math.sin(phi);
-    const P2 = (3*Math.sin(phi)**2 - 1) / 2;
-    const P3 = Math.sin(phi) * Math.cos(phi);
-    let A = values[0] + values[1]*P1 + values[2]*P2 + values[3]*P3;
-    A += values[4]*Math.cos(tau) + values[5]*Math.sin(tau);
-    A += values[6]*Math.cos(tau)*P1 + values[7]*Math.sin(tau)*P1;
-    A += values[8]*Math.cos(tau + lam);
-    // BDGIM outputs vertical TEC in TECU → convert to L1 metres (40.3/f² × 1e16)
-    const TECU = Math.max(0, A);
-    return TECU * 0.162; // metres at B1 (~1561 MHz); close enough
+    // Local solar time (peaks ~14:00 LST)
+    const lst = ((tHours + lon / 15) % 24 + 24) % 24;
+    const diurnal = Math.max(0, Math.cos((lst - 14) * Math.PI / 12));
+    // Geomagnetic latitude (north dipole at ~80.4°N, 72.6°W → lat shift)
+    const magLat = lat - 11.5 * Math.cos((lon + 72.6) * Math.PI / 180);
+    // Equatorial-anomaly-flavored profile: peak at magnetic equator
+    const latFactor = Math.cos(magLat * Math.PI / 180) ** 2;
+    // α₁ is the dominant absolute-level term in TECU
+    const scale = Math.max(5, values[0]);
+    const TECU = scale * diurnal * latFactor;
+    return TECU * 0.162; // metres at B1I (~1561 MHz)
 }
 
 // NeQuick-G broadcast — 3 effective ionization params + 5 region flags drive
