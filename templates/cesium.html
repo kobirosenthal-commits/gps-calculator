@@ -74,7 +74,7 @@
         .btn-geo   { background: #1a6a3a; color: #e0f0ff; }
         .btn-clear { background: #4a1a1a; color: #ffaaaa; }
         #recv-status { margin-top: 8px; font-size: 0.8em; color: #5599cc; min-height: 1.2em; }
-        #btn-2d, #btn-refresh-data, #btn-iono { color: #aaa; background: none; font-family: inherit; font-size: 0.85em; border: 1px solid #333; padding: 5px 12px; border-radius: 20px; cursor: pointer; transition: all 0.2s; }
+        #btn-2d, #btn-refresh-data, #btn-iono, #btn-dop { color: #aaa; background: none; font-family: inherit; font-size: 0.85em; border: 1px solid #333; padding: 5px 12px; border-radius: 20px; cursor: pointer; transition: all 0.2s; }
         #btn-2d:hover:not(:disabled), #btn-refresh-data:hover:not(:disabled), #btn-iono:hover:not(:disabled) { color: #fff; border-color: #7ecfff; }
         #btn-2d.active, #btn-iono.active { color: #7ecfff; border-color: #7ecfff; background: rgba(126,207,255,0.1); }
         #btn-2d:disabled, #btn-refresh-data:disabled, #btn-iono:disabled { opacity: 0.3; cursor: not-allowed; }
@@ -232,6 +232,46 @@
         .iono-legend-labels { display: flex; justify-content: space-between; font-size: 0.72em; color: #aacde0; margin-top: 2px; }
         .iono-legend-cap { font-size: 0.72em; color: #5599cc; text-align: center; margin-top: 2px; }
         .iono-hint { font-size: 0.72em; color: #5599cc; margin-top: 8px; line-height: 1.4; }
+        #dop-panel { position: absolute; top: 60px; right: 20px; width: 280px; z-index: 12; padding: 14px 16px; }
+        .dop-status { font-size: 0.78em; color: #aaa; margin-bottom: 8px; line-height: 1.4; }
+        .dop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+        .dop-cell { background: rgba(0,20,50,0.55); border: 1px solid #1a3a5c; border-radius: 5px; padding: 7px 9px; }
+        .dop-cell .dop-lbl { font-size: 0.7em; color: #5599cc; letter-spacing: 1px; }
+        .dop-cell .dop-val { font-size: 1.35em; font-weight: 700; line-height: 1.1; margin-top: 2px; font-variant-numeric: tabular-nums; }
+        .dop-cell.q1 { border-left: 3px solid #00ff88; }
+        .dop-cell.q2 { border-left: 3px solid #aaff44; }
+        .dop-cell.q3 { border-left: 3px solid #ff9944; }
+        .dop-cell.q4 { border-left: 3px solid #ff5555; }
+        .dop-cell.q1 .dop-val { color: #00ff88; }
+        .dop-cell.q2 .dop-val { color: #aaff44; }
+        .dop-cell.q3 .dop-val { color: #ff9944; }
+        .dop-cell.q4 .dop-val { color: #ff5555; }
+        .dop-extra { display: flex; justify-content: space-between; gap: 8px; font-size: 0.75em; padding: 6px 4px; border-top: 1px solid #1a3a5c; }
+        .dop-extra .lbl { color: #5599cc; margin-right: 4px; }
+        .dop-extra .val { color: #e0f0ff; font-weight: 600; }
+        .dop-hint { font-size: 0.68em; color: #5599cc; margin-top: 8px; line-height: 1.6; }
+        .dop-q { display: inline-block; padding: 1px 5px; border-radius: 8px; margin-right: 3px; }
+        .dop-q-1 { background: rgba(0,255,136,0.18); color: #00ff88; }
+        .dop-q-2 { background: rgba(170,255,68,0.18); color: #aaff44; }
+        .dop-q-3 { background: rgba(255,153,68,0.18); color: #ff9944; }
+        .dop-q-4 { background: rgba(255,85,85,0.18); color: #ff5555; }
+        @media (max-width: 640px) {
+            #dop-panel {
+                top: auto !important; left: 0 !important; right: 0 !important;
+                bottom: 56px !important; width: 100% !important;
+                border-radius: 12px 12px 0 0; border-bottom: none;
+                max-height: 70vh; overflow-y: auto;
+                padding: 14px 18px 22px;
+            }
+            #iono-panel {
+                top: auto !important; left: 0 !important; right: 0 !important;
+                bottom: 56px !important; width: 100% !important;
+                border-radius: 12px 12px 0 0; border-bottom: none;
+                max-height: 70vh; overflow-y: auto;
+                padding: 14px 18px 22px;
+            }
+            .dop-grid { grid-template-columns: 1fr 1fr 1fr; }
+        }
         .glo-alm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 4px; margin-top: 4px; }
         .glo-alm-cell { background: rgba(0,20,50,0.55); border: 1px solid #1a3a5c; border-radius: 4px; padding: 6px 8px; font-size: 0.72em; }
         .glo-alm-cell.healthy { border-left: 3px solid #00ff88; }
@@ -293,7 +333,7 @@
             #const-toggles { gap: 3px; }
             .tog-btn { padding: 4px 7px; font-size: 0.66em; }
             #topbar-right { gap: 4px; }
-            #topbar a, #btn-2d, #btn-refresh-data, #btn-iono { font-size: 0.68em; padding: 4px 8px; }
+            #topbar a, #btn-2d, #btn-refresh-data, #btn-iono, #btn-dop { font-size: 0.68em; padding: 4px 8px; }
 
             /* Move zoom control above the bottom bar */
             #zoom-ctrl { bottom: 66px; }
@@ -391,6 +431,7 @@
     <div id="topbar-right">
         <button id="btn-refresh-data" onclick="refreshData()" title="Re-fetch TLEs and RINEX from upstream sources">⟳ Refresh data</button>
         <button id="btn-iono" onclick="toggleIono()" title="Show broadcast ionospheric delay map">🌐 Ionosphere</button>
+        <button id="btn-dop" onclick="toggleDop()" title="Dilution of Precision metrics (needs receiver location)">📐 DOP</button>
         <button id="btn-2d" disabled onclick="toggle2D()">⊙ 2D Sky Plot</button>
         <a href="/calculator">⚙ Calculator</a>
     </div>
@@ -422,6 +463,21 @@
     <div class="btn-row" style="margin-top:6px">
         <button class="btn btn-set" onclick="applyFrozenTime()">Apply</button>
         <button class="btn btn-clear" onclick="closeTimeEdit()">Cancel</button>
+    </div>
+</div>
+
+<div class="card" id="dop-panel" style="display:none">
+    <h3>📐 Dilution of Precision</h3>
+    <div id="dop-status" class="dop-status">No receiver set — open Receiver panel to set a location.</div>
+    <div id="dop-grid" class="dop-grid"></div>
+    <div class="dop-extra">
+        <div><span class="lbl">Sats used</span><span class="val" id="dop-nsats">—</span></div>
+        <div><span class="lbl">Mask</span><span class="val" id="dop-mask">—</span></div>
+        <div><span class="lbl">Updated</span><span class="val" id="dop-updated">—</span></div>
+    </div>
+    <div class="dop-hint">Quality: <span class="dop-q dop-q-1">≤ 2 excellent</span> · <span class="dop-q dop-q-2">2-5 good</span> · <span class="dop-q dop-q-3">5-10 fair</span> · <span class="dop-q dop-q-4">&gt; 10 poor</span></div>
+    <div class="btn-row" style="margin-top:6px">
+        <button class="btn btn-clear" onclick="toggleDop()">Close</button>
     </div>
 </div>
 
@@ -2270,6 +2326,134 @@ setInterval(() => {
     Object.keys(_tleLoaded).forEach(k => _tleLoaded[k] = false);
     bootstrapTLEs();
 }, 6 * 3600 * 1000);
+
+// ── Dilution of Precision (DOP) ───────────────────────────────────────
+let dopOn = false, dopRefreshTimer = null;
+
+function toggleDop() {
+    dopOn = !dopOn;
+    const p = document.getElementById('dop-panel');
+    const btn = document.getElementById('btn-dop');
+    p.style.display = dopOn ? 'block' : 'none';
+    btn.classList.toggle('active', dopOn);
+    if (dopOn) {
+        refreshDop();
+        clearInterval(dopRefreshTimer);
+        dopRefreshTimer = setInterval(refreshDop, 5000);
+    } else {
+        clearInterval(dopRefreshTimer);
+    }
+}
+
+function refreshDop() {
+    const status = document.getElementById('dop-status');
+    const grid   = document.getElementById('dop-grid');
+    const ns     = document.getElementById('dop-nsats');
+    const mk     = document.getElementById('dop-mask');
+    const upd    = document.getElementById('dop-updated');
+    if (!receiver) {
+        status.textContent = 'No receiver set — open Receiver panel to set a location.';
+        status.style.color = '#ff9944';
+        grid.innerHTML = '';
+        ns.textContent = mk.textContent = upd.textContent = '—';
+        return;
+    }
+    const mask = elevMask();
+    const visible = lastSatellites
+        .filter(s => enabledConst[s.constellation])
+        .map(s => ({ sat: s, ...azelFromEcef(receiver.ecef, s.x, s.y, s.z) }))
+        .filter(v => v.elev >= mask);
+    if (visible.length < 4) {
+        status.textContent = `Only ${visible.length} satellite${visible.length===1?'':'s'} above mask — need ≥4 for a fix.`;
+        status.style.color = '#ff5555';
+        grid.innerHTML = '';
+        ns.textContent  = visible.length;
+        mk.textContent  = mask + '°';
+        upd.textContent = new Date().toUTCString().slice(17, 25) + ' UTC';
+        return;
+    }
+    const dops = computeDOP(visible);
+    if (!dops) {
+        status.textContent = 'Geometry singular (sats too close together).';
+        status.style.color = '#ff5555';
+        grid.innerHTML = '';
+        return;
+    }
+    status.textContent = 'Receiver geometry over visible sats.';
+    status.style.color = '#aac';
+    const cells = [
+        ['GDOP', dops.GDOP, '3D + time'],
+        ['PDOP', dops.PDOP, '3D position'],
+        ['HDOP', dops.HDOP, 'horizontal'],
+        ['VDOP', dops.VDOP, 'vertical'],
+        ['TDOP', dops.TDOP, 'time'],
+    ];
+    grid.innerHTML = cells.map(([k, v, sub]) => {
+        const q = dopQuality(v);
+        return `<div class="dop-cell q${q}"><div class="dop-lbl">${k}</div><div class="dop-val">${v.toFixed(2)}</div><div style="font-size:0.62em;color:#5599cc;margin-top:1px">${sub}</div></div>`;
+    }).join('');
+    ns.textContent  = visible.length;
+    mk.textContent  = mask + '°';
+    upd.textContent = new Date().toUTCString().slice(17, 25) + ' UTC';
+}
+
+function dopQuality(v) {
+    if (v <= 2)  return 1;
+    if (v <= 5)  return 2;
+    if (v <= 10) return 3;
+    return 4;
+}
+
+// Compute DOPs from visible-sat azimuth/elevation. Builds the geometry matrix
+// H (rows = [-cos(el)·sin(az), -cos(el)·cos(az), -sin(el), 1]), inverts HᵀH,
+// and pulls the diagonal. Returns {GDOP, PDOP, HDOP, VDOP, TDOP} or null if singular.
+function computeDOP(visible) {
+    const D2R = Math.PI / 180;
+    const HtH = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+    for (const v of visible) {
+        const e = v.elev * D2R, a = v.az * D2R, ce = Math.cos(e);
+        const row = [-ce * Math.sin(a), -ce * Math.cos(a), -Math.sin(e), 1];
+        for (let i = 0; i < 4; i++)
+            for (let j = 0; j < 4; j++)
+                HtH[i][j] += row[i] * row[j];
+    }
+    const inv = invert4x4(HtH);
+    if (!inv) return null;
+    const dE = inv[0][0], dN = inv[1][1], dU = inv[2][2], dT = inv[3][3];
+    if (dE < 0 || dN < 0 || dU < 0 || dT < 0) return null;
+    return {
+        HDOP: Math.sqrt(dE + dN),
+        VDOP: Math.sqrt(dU),
+        TDOP: Math.sqrt(dT),
+        PDOP: Math.sqrt(dE + dN + dU),
+        GDOP: Math.sqrt(dE + dN + dU + dT),
+    };
+}
+
+function invert4x4(m) {
+    // Simple cofactor inversion for a symmetric positive-definite 4×4. Fine for DOP.
+    const a = [m[0].slice(), m[1].slice(), m[2].slice(), m[3].slice()];
+    const I = [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]];
+    for (let i = 0; i < 4; i++) {
+        let pv = a[i][i];
+        if (Math.abs(pv) < 1e-12) {
+            // pivot swap
+            let r = -1;
+            for (let k = i + 1; k < 4; k++) if (Math.abs(a[k][i]) > 1e-12) { r = k; break; }
+            if (r < 0) return null;
+            [a[i], a[r]] = [a[r], a[i]];
+            [I[i], I[r]] = [I[r], I[i]];
+            pv = a[i][i];
+        }
+        for (let j = 0; j < 4; j++) { a[i][j] /= pv; I[i][j] /= pv; }
+        for (let k = 0; k < 4; k++) {
+            if (k === i) continue;
+            const f = a[k][i];
+            for (let j = 0; j < 4; j++) { a[k][j] -= f * a[i][j]; I[k][j] -= f * I[i][j]; }
+        }
+    }
+    return I;
+}
 
 // ── Ionosphere viewer ─────────────────────────────────────────────────
 let ionoData = null;
