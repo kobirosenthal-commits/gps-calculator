@@ -3754,6 +3754,208 @@ function startConstellationBitsTicker(sysKey, period, count) {
 function startGalfTicker() { startConstellationBitsTicker('galf', 2, 5); }
 
 
+// ── Bit-model validation ──────────────────────────────────────────────
+// Audits each constellation's field maps for:
+//   1. Bit overlap (two fields claiming the same bit)
+//   2. Bit gaps (bits 0..N-1 that no field covers)
+//   3. Out-of-range starts/lengths
+//   4. Encode → decode roundtrip error for scaled/signed fields
+// Run from DevTools: validateBitModels()
+window.validateBitModels = function () {
+    const sampleVals = {
+        // GPS LNAV
+        gps_week: 2418, l2_codes: 1, ura: 0, health_eph: 0, iodc: 35, l2_p_flag: 0,
+        tgd: -3.7e-9, toc_sec: 432000, af0_raw: 1.5e-4, af1_raw: -3.4e-12, af2: 0,
+        iode: 100, crs: 5.5, delta_n_semi: 1.4e-9 / Math.PI, m0_semi: 0.6,
+        cuc: 2.3e-7, cus: 8.1e-6, e_eph: 0.0042, sqrt_a_eph: 5153.7, toe: 432000,
+        fit_interval: 0, omega0_semi: -0.7, omega_semi: 0.5, i0_semi: 0.31,
+        omega_dot_semi: -2.6e-9 / Math.PI, idot_semi: 1.2e-10 / Math.PI,
+        crc: 200.5, cic: 1.1e-7, cis: -3.2e-8,
+        tow17: 12345,
+        // BeiDou
+        sat_h1: 0, aodc: 1, urai: 0, wn: 1060, toc: 432000, tgd1: 3.5e-9, tgd2: 3.5e-9,
+        sow_msb: 0, sow_lsb: 0,
+        // Galileo
+        iodnav: 100, svid: 1, sisa: 5, sv_health: 0, gst_wn: 100, gst_tow: 12345,
+        bgd_e5a_e1: 1e-9, bgd_e5b_e1: 1e-9,
+        // NeQuick
+        ai0: 100, ai1: 0.25, ai2: 0.012, storm: 0,
+        // Iono Klobuchar
+        alpha0: 1.0e-8, alpha1: 0, alpha2: -6e-8, alpha3: -1.2e-7,
+        beta0:  9.0e4, beta1: 0,    beta2: -1.3e5, beta3: -1.9e5,
+        utc_a0: -1e-9, utc_a1: 0, utc_tot: 432000, utc_wnt: 100,
+        leap_dt_ls: 18, leap_dt_ls_fut: 18, leap_wn_lsf: 100, leap_dn: 7,
+        // GLONASS state
+        x_km: 12000, vx_kms: 2.4, ax_kms2: 1e-9, y_km: -8000, vy_kms: -1.5, ay_kms2: -2e-9,
+        z_km: 18000, vz_kms: 0.8, az_kms2: 0,
+        xn: Math.round(12000 * Math.pow(2,11)), vxn: Math.round(2.4 * Math.pow(2,20)),
+        axn: Math.round(1e-9 * Math.pow(2,30)), yn: Math.round(-8000 * Math.pow(2,11)),
+        vyn: Math.round(-1.5 * Math.pow(2,20)), ayn: Math.round(-2e-9 * Math.pow(2,30)),
+        zn: Math.round(18000 * Math.pow(2,11)), vzn: Math.round(0.8 * Math.pow(2,20)),
+        azn: 0,
+        tk: 100, p2: 0, tb: 480, gamma_n: 0, p3: 0, ln: 0,
+        tau_n: 0, delta_tau: 0, en: 5, ft: 4, nt: 6000, n: 1, m: 2,
+        bn: 0, na: 0, tau_c: 0, n4: 6, tau_gps: 0,
+    };
+    // Also fill almanac slot stubs
+    for (let p = 1; p <= 32; p++) {
+        sampleVals[`alm${p}_e`]         = 0.005;
+        sampleVals[`alm${p}_sqrt_a`]    = 5153;
+        sampleVals[`alm${p}_omega0`]    = -0.5;
+        sampleVals[`alm${p}_omega`]     = 0.3;
+        sampleVals[`alm${p}_m0`]        = 0.6;
+        sampleVals[`alm${p}_delta_i`]   = 0.005;
+        sampleVals[`alm${p}_omega_dot`] = -2.5e-9 / Math.PI;
+        sampleVals[`alm${p}_toa`]       = 432000;
+        sampleVals[`alm${p}_health`]    = 0;
+        sampleVals[`alm${p}_af0`]       = 0;
+        sampleVals[`alm${p}_af1`]       = 0;
+        sampleVals[`bdsAlm${p}_e`]         = 0.005;
+        sampleVals[`bdsAlm${p}_sqrt_a`]    = 6493;
+        sampleVals[`bdsAlm${p}_omega0`]    = -0.5;
+        sampleVals[`bdsAlm${p}_omega`]     = 0.3;
+        sampleVals[`bdsAlm${p}_m0`]        = 0.6;
+        sampleVals[`bdsAlm${p}_delta_i`]   = 0.005;
+        sampleVals[`bdsAlm${p}_omega_dot`] = -2.5e-9 / Math.PI;
+        sampleVals[`bdsAlm${p}_toa`]       = 0;
+        sampleVals[`bdsAlm${p}_health`]    = 0;
+        sampleVals[`bdsAlm${p}_af0`]       = 0;
+        sampleVals[`bdsAlm${p}_af1`]       = 0;
+        sampleVals['h' + p] = 0;
+        sampleVals['bds_h' + p] = 0;
+    }
+    for (let i = 3; i <= 8; i++) sampleVals['as_flags_w' + i] = 0;
+
+    function _validateFields(name, fields, totalBits) {
+        const cov = new Array(totalBits).fill(false);
+        const issues = [];
+        for (const f of fields) {
+            if (f.start < 0 || f.start + f.len > totalBits) {
+                issues.push({ severity: 'error', field: f.name, msg: `start=${f.start} len=${f.len} out of [0, ${totalBits})` });
+                continue;
+            }
+            for (let k = 0; k < f.len; k++) {
+                if (cov[f.start + k]) {
+                    issues.push({ severity: 'warn', field: f.name, msg: `bit ${f.start + k} already covered (overlap)` });
+                    break;
+                }
+                cov[f.start + k] = true;
+            }
+        }
+        const gaps = [];
+        let g0 = -1;
+        for (let i = 0; i <= totalBits; i++) {
+            if (i < totalBits && !cov[i]) {
+                if (g0 < 0) g0 = i;
+            } else if (g0 >= 0) {
+                gaps.push([g0, i - 1]);
+                g0 = -1;
+            }
+        }
+        if (gaps.length) issues.push({ severity: 'info', field: '(gaps)', msg: gaps.map(([a,b]) => a===b?`bit ${a}`:`bits ${a}-${b}`).join(', ') });
+        return { name, issues };
+    }
+
+    function _roundtrip(name, fields, totalBits, vals) {
+        const issues = [];
+        const bits = new Array(totalBits).fill(0);
+        for (const f of fields) {
+            if (f.fromKey === undefined || f.fixed !== undefined) continue;
+            const v = vals[f.fromKey];
+            if (v == null || isNaN(v)) continue;
+            let raw;
+            if (f.scale) {
+                let scaled = Math.round(v * f.scale);
+                if (f.shift) scaled = Math.trunc(scaled / Math.pow(2, f.shift));
+                raw = f.signed ? Number(_twos(scaled, f.len)) : (scaled & ((1 << Math.min(f.len, 30)) - 1));
+            } else continue;  // pure-int fields don't need roundtrip check
+            // Decode back
+            let decoded = 0n;
+            for (let i = 0; i < f.len; i++) {
+                const bit = (raw >> (f.len - 1 - i)) & 1;
+                decoded = (decoded << 1n) | BigInt(bit);
+            }
+            // sign-extend
+            let dnum;
+            if (f.signed) {
+                const max = 1n << BigInt(f.len);
+                if (decoded >= (1n << BigInt(f.len - 1))) dnum = Number(decoded - max);
+                else dnum = Number(decoded);
+            } else dnum = Number(decoded);
+            // Reverse scale
+            let dval = dnum / f.scale;
+            if (f.shift) dval *= Math.pow(2, f.shift);
+            // Compare to expected (allow scale-resolution rounding)
+            const resolution = (f.shift ? Math.pow(2, f.shift) : 1) / f.scale;
+            const expected = (f.shift && !f.mask) ? Math.trunc(v * f.scale / Math.pow(2, f.shift)) * Math.pow(2, f.shift) / f.scale : v;
+            const err = Math.abs(dval - expected);
+            const tol = Math.max(Math.abs(expected) * 0.01, resolution * 1.5);
+            if (err > tol) {
+                issues.push({ severity: 'warn', field: f.name, msg: `roundtrip error ${err.toExponential(2)} (tol ${tol.toExponential(2)}); in=${v} → bits=0x${raw.toString(16)} → out=${dval}` });
+            }
+        }
+        return { name, issues };
+    }
+
+    const reports = [];
+    // GPS LNAV
+    [1,2,3].forEach(sf => {
+        reports.push(_validateFields(`GPS LNAV SF${sf}`, LNAV_FIELDS[sf], 300));
+        reports.push(_roundtrip(`GPS LNAV SF${sf} roundtrip`, LNAV_FIELDS[sf], 300, sampleVals));
+    });
+    [18, 25, 1, 7].forEach(p => {
+        const f = buildSf4Page(p);
+        reports.push(_validateFields(`GPS LNAV SF4 page ${p}`, f, 300));
+    });
+    [1, 25].forEach(p => {
+        const f = buildSf5Page(p);
+        reports.push(_validateFields(`GPS LNAV SF5 page ${p}`, f, 300));
+    });
+    // GLONASS
+    for (let s = 1; s <= 15; s++) {
+        reports.push(_validateFields(`GLONASS String ${s}`, glonassStringFields(s), 100));
+    }
+    // BeiDou D1
+    [1,2,3].forEach(sf => {
+        reports.push(_validateFields(`BeiDou D1 SF${sf}`, beidouD1Fields(sf), 300));
+    });
+    [4, 5].forEach(sf => {
+        [1, 7, 9, 10, 24].forEach(p => {
+            reports.push(_validateFields(`BeiDou D1 SF${sf} page ${p}`, beidouD1PageFields(sf, p), 300));
+        });
+    });
+    // Galileo I/NAV (128 bits) and F/NAV (244 bits)
+    for (let wt = 1; wt <= 5; wt++) {
+        reports.push(_validateFields(`Galileo I/NAV WT${wt}`, galileoInavFields(wt), 128));
+        reports.push(_validateFields(`Galileo F/NAV WT${wt}`, galileoFnavFields(wt), 244));
+    }
+
+    // Print report
+    let nErr = 0, nWarn = 0, nInfo = 0;
+    console.group('%c📐 BIT MODEL VALIDATION', 'font-size: 14px; color: #7ecfff');
+    for (const r of reports) {
+        if (!r.issues.length) {
+            console.log('%c ✓ ' + r.name, 'color: #00ff88');
+            continue;
+        }
+        const errs = r.issues.filter(i => i.severity === 'error').length;
+        const warns = r.issues.filter(i => i.severity === 'warn').length;
+        const infos = r.issues.filter(i => i.severity === 'info').length;
+        const tag = errs ? '✗' : warns ? '⚠' : 'ℹ';
+        const color = errs ? '#ff5555' : warns ? '#ff9944' : '#5599cc';
+        console.groupCollapsed(`%c ${tag} ${r.name} — ${errs} err, ${warns} warn, ${infos} info`, `color: ${color}`);
+        for (const i of r.issues) {
+            console.log(`%c[${i.severity}] ${i.field}: ${i.msg}`, `color: ${i.severity==='error'?'#ff5555':i.severity==='warn'?'#ff9944':'#5599cc'}`);
+        }
+        console.groupEnd();
+        nErr += errs; nWarn += warns; nInfo += infos;
+    }
+    console.log(`%c\nSummary: ${nErr} errors · ${nWarn} warnings · ${nInfo} info`, 'font-weight: 700');
+    console.groupEnd();
+    return { errors: nErr, warnings: nWarn, infos: nInfo, reports };
+};
+
+
 // ── Dilution of Precision (DOP) ───────────────────────────────────────
 let dopOn = false, dopRefreshTimer = null;
 
