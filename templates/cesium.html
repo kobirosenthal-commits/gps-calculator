@@ -1258,8 +1258,20 @@ function buildSatDetailHtml(data, sat, rangeKm, elev, az) {
         html += sdRow('SV Health',       e.health_eph === 0
             ? '<span style="color:#00ff88">0 — Healthy</span>'
             : '<span style="color:#ff5555">' + e.health_eph + ' — Unhealthy</span>');
+        // Decode the 6-bit health byte per IS-GPS-200 Table 20-VIII
+        const navDataOk = (e.health_eph & 0x20) === 0;
+        const sigCode = e.health_eph & 0x1F;
+        const sigCodeMap = {
+            0x00: 'All signals OK', 0x1C: 'SV is temporarily out',
+            0x1D: 'SV will be temporarily out', 0x1E: 'One or more signals deformed',
+            0x1F: 'More than one comb. of signal failures',
+        };
+        html += sdRow('  ↳ NAV data',    navDataOk
+            ? '<span style="color:#00ff88">OK</span>'
+            : '<span style="color:#ff5555">bad/uploaded marginally</span>');
+        html += sdRow('  ↳ Signal code', sigCodeMap[sigCode] || ('0b' + sigCode.toString(2).padStart(5,'0')));
         html += sdRow('L2 codes',        (l2Map[e.l2_codes] || e.l2_codes));
-        html += sdRow('L2 P flag',       e.l2_p_flag);
+        html += sdRow('L2 P flag',       e.l2_p_flag === 0 ? 'NAV data on L2 P' : 'no NAV data on L2 P');
         html += sdRow('TGD',             e.tgd.toExponential(3) + ' s');
         html += sdRow('af₂',             e.af2.toExponential(3) + ' s/s²');
         html += '<div class="sd-sub">Subframe 2 — Ephemeris I</div>';
@@ -1787,6 +1799,23 @@ function renderIonoSection(constellation) {
         const fmt = (typeof v === 'number') ? v.toExponential(3) : v;
         body += sdRow(labels[i], fmt);
     });
+    // NeQuick-G storm flags decode (5 regions, 1 bit each in the last value)
+    if (model === 'nequick' && rec.values.length >= 4) {
+        const flags = Math.round(rec.values[3]);
+        const regions = [
+            ['Region 1', '30°N – 90°N'],
+            ['Region 2', '0° – 30°N'],
+            ['Region 3', '0° – 30°S'],
+            ['Region 4', '30°S – 90°S'],
+            ['Region 5', 'reserved'],
+        ];
+        body += '<div class="sd-sub">Disturbance Flags</div>';
+        regions.forEach(([name, range], i) => {
+            const set = (flags >> i) & 1;
+            body += sdRow(`${name} (${range})`,
+                set ? '<span style="color:#ff5555">⚠ storm</span>' : '<span style="color:#00ff88">nominal</span>');
+        });
+    }
     body += '</div>';
     return body;
 }
