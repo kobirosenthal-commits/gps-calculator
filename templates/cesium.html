@@ -1124,6 +1124,7 @@ async function fetchLive() {
 let skyPlotSats = [];
 let detailRefreshTimer = null;
 let dataFreshness = {};
+let sysTimeData = {sto: {}, eop: null};
 
 function fmtAgo(epochSec) {
     if (!epochSec) return 'unknown';
@@ -1572,7 +1573,76 @@ function buildSatDetailHtml(data, sat, rangeKm, elev, az) {
 
     html += '<div class="sd-section"><h4>NAVIGATION MESSAGE</h4>' + renderNavBlock(sat.constellation) + '</div>';
     html += renderIonoSection(sat.constellation);
+    html += renderSysTimeSection(sat.constellation);
+    html += renderEopSection(sat.constellation);
     return html;
+}
+
+// Map of which STO codes to highlight per constellation
+const STO_BY_CONST = {
+    GPS:     [['GPUT','GPS → UTC'],['GPGA','GPS → Galileo'],['GPBD','GPS → BeiDou']],
+    GLONASS: [['GLUT','GLONASS → UTC'],['GLGP','GLONASS → GPS']],
+    BEIDOU:  [['BDUT','BeiDou → UTC'],['BDGP','BeiDou → GPS'],['BDGA','BeiDou → Galileo'],['BDGL','BeiDou → GLONASS']],
+    GALILEO: [['GAUT','Galileo → UTC'],['GAGP','Galileo → GPS']],
+};
+const STO_FALLBACK = {
+    GPGA: ['GAGP', -1], GPBD: ['BDGP', -1], BDGP: ['BDGP', 1],
+    GLGP: ['GLGP', 1], GAGP: ['GAGP', 1], BDGA: ['BDGA', 1], BDGL: ['BDGL', 1],
+};
+
+function renderSysTimeSection(constellation) {
+    const sto = (sysTimeData && sysTimeData.sto) || {};
+    const codes = STO_BY_CONST[constellation] || [];
+    if (!codes.length) return '';
+    let body = '<div class="sd-section"><h4>SYSTEM TIME OFFSETS</h4>';
+    let hasAny = false;
+    codes.forEach(([code, label]) => {
+        let rec = sto[code];
+        let invertSign = false;
+        if (!rec && STO_FALLBACK[code]) {
+            const fb = sto[STO_FALLBACK[code][0]];
+            if (fb) { rec = fb; invertSign = STO_FALLBACK[code][1] === -1; }
+        }
+        if (!rec || !rec.values || rec.values.length < 2) return;
+        hasAny = true;
+        const sign = invertSign ? -1 : 1;
+        const A0 = rec.values[1] * sign;
+        const A1 = rec.values[2] * sign;
+        body += `<div class="sd-sub">${label}${rec.utc_id ? ' (' + rec.utc_id + ')' : ''}</div>`;
+        body += sdRow('A₀', (A0 * 1e9).toFixed(2) + ' ns');
+        body += sdRow('A₁', (A1 * 1e15).toFixed(3) + ' ×10⁻¹⁵ s/s');
+        body += sdRow('Ref epoch', rec.epoch || '—');
+        body += sdRow('Source SV', rec.sat || '—');
+    });
+    if (!hasAny) {
+        body += '<div class="sd-row"><span class="sd-lbl">status</span><span class="sd-val" style="color:#886">no STO blocks in current RINEX 4 file</span></div>';
+    }
+    body += '</div>';
+    return body;
+}
+
+function renderEopSection(constellation) {
+    // EOP is global — show on every detail panel (most relevant for GPS but useful everywhere)
+    const eop = sysTimeData && sysTimeData.eop;
+    if (!eop || !eop.values || eop.values.length < 9) return '';
+    const v = eop.values;
+    let body = '<div class="sd-section"><h4>EARTH ORIENTATION (CNAV MT 32)</h4>';
+    body += sdRow('Reference epoch', eop.epoch || '—');
+    body += sdRow('Source SV',       eop.sat || '—');
+    body += '<div class="sd-sub">Polar motion X</div>';
+    body += sdRow('PMx',           v[0].toFixed(6) + ' ″');
+    body += sdRow('PMx rate',      v[1].toExponential(3) + ' ″/day');
+    body += sdRow('PMx accel',     v[2].toExponential(3) + ' ″/day²');
+    body += '<div class="sd-sub">Polar motion Y</div>';
+    body += sdRow('PMy',           v[3].toFixed(6) + ' ″');
+    body += sdRow('PMy rate',      v[4].toExponential(3) + ' ″/day');
+    body += sdRow('PMy accel',     v[5].toExponential(3) + ' ″/day²');
+    body += '<div class="sd-sub">UT1−UTC / LOD</div>';
+    body += sdRow('t_eop',         v[6].toFixed(0) + ' s');
+    body += sdRow('UT1−UTC',       (v[7] * 1000).toFixed(3) + ' ms');
+    body += sdRow('LOD',           (v[8] * 1e6).toFixed(3) + ' μs/day');
+    body += '</div>';
+    return body;
 }
 
 function renderIonoSection(constellation) {
@@ -1695,11 +1765,13 @@ function loadSpContent(sat) {
     Promise.all([
         fetch(`/api/satellite-detail?label=${encodeURIComponent(label)}&constellation=${sat.constellation}`).then(r => r.json()),
         fetch('/api/data-freshness').then(r => r.json()).catch(() => ({})),
-        fetch('/api/ionosphere').then(r => r.json()).catch(() => ({iono:{}}))
+        fetch('/api/ionosphere').then(r => r.json()).catch(() => ({iono:{}})),
+        fetch('/api/system-time').then(r => r.json()).catch(() => ({sto:{}, eop:null}))
     ])
-        .then(([data, fresh, iono]) => {
+        .then(([data, fresh, iono, systime]) => {
             dataFreshness = fresh || {};
             ionoData = (iono && iono.iono) || ionoData || {};
+            sysTimeData = systime || {sto:{}, eop:null};
             content.innerHTML = buildFreshnessBanner(sat.constellation) + buildSatDetailHtml(data, sat, rangeKm, elev, az);
             detailRefreshTimer = setInterval(() => {
                 const el = document.getElementById('sd-sf-display');

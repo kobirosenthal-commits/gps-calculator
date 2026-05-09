@@ -794,6 +794,24 @@ def ionosphere_data():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/system-time', methods=['GET'])
+def system_time_data():
+    """Return RINEX 4 STO records (inter-system time offsets) and EOP
+    (Earth Orientation Parameters from GPS CNAV MT 32)."""
+    import os, json
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        'data', 'rinex4_systime.json')
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            blob = json.load(f)
+        blob['mtime'] = int(os.path.getmtime(path))
+        return jsonify(blob)
+    except FileNotFoundError:
+        return jsonify({'sto': {}, 'eop': None, 'date': None, 'mtime': None}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/data-freshness', methods=['GET'])
 def data_freshness():
     """Return mtimes of the data files so the UI can show 'last updated' tags."""

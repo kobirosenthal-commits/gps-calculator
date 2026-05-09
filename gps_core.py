@@ -519,6 +519,10 @@ def parse_rinex4_combined(line_iter, progress=None):
     bds_cnv3 = {}
     # Iono correction blocks: most recent of each model wins
     iono = {'klobuchar': None, 'nequick': None, 'bdgim': None}
+    # System Time Offsets (e.g. GPUT = GPS-UTC, BDGA = BeiDou-Galileo, etc.) — keyed by 4-letter code
+    sto = {}
+    # Earth Orientation Parameters (only GPS CNAV broadcasts these)
+    eop = None
 
     _FLOAT_RE = re.compile(r'[+-]?\d+\.\d+[eEdD][+-]?\d+')
     _EPOCH_RE = re.compile(r'\s*(\d{4})\s+(\d{1,2})\s+(\d{1,2})\s+(\d{1,2})\s+(\d{1,2})\s+(\d{1,2})')
@@ -551,6 +555,57 @@ def parse_rinex4_combined(line_iter, progress=None):
                     pass
         return {'epoch': epoch, 'sys': sys_letter, 'model': model, 'values': floats}
 
+    def _grab_sto(it):
+        """STO record: 2 continuation lines.
+        Line 1: epoch + 4-letter time-system code (GPUT, BDGA, GAGP, ...) [+ optional UTC-ID]
+        Line 2: T_ref_t, A0, A1, A2"""
+        epoch, code, utc_id, floats = None, None, None, []
+        for n in range(2):
+            try:
+                pos = next(it)
+            except StopIteration:
+                break
+            if pos.startswith('> '):
+                break
+            if n == 0:
+                m = _EPOCH_RE.match(pos)
+                if m:
+                    epoch = ' '.join(m.groups())
+                    rest = pos[m.end():].split()
+                    if rest:
+                        code = rest[0]
+                        if len(rest) > 1:
+                            utc_id = ' '.join(rest[1:])
+            else:
+                for tok in _FLOAT_RE.findall(pos.replace('D', 'E').replace('d', 'e')):
+                    try:
+                        floats.append(float(tok))
+                    except ValueError:
+                        pass
+        return {'epoch': epoch, 'code': code, 'utc_id': utc_id, 'values': floats}
+
+    def _grab_eop(it):
+        """EOP record: 3 continuation lines, all numeric (after epoch)."""
+        epoch, floats = None, []
+        for _ in range(3):
+            try:
+                pos = next(it)
+            except StopIteration:
+                break
+            if pos.startswith('> '):
+                break
+            if epoch is None:
+                m = _EPOCH_RE.match(pos)
+                if m:
+                    epoch = ' '.join(m.groups())
+                    pos = pos[m.end():]
+            for tok in _FLOAT_RE.findall(pos.replace('D', 'E').replace('d', 'e')):
+                try:
+                    floats.append(float(tok))
+                except ValueError:
+                    pass
+        return {'epoch': epoch, 'values': floats}
+
     for ln in it:
         line_count += 1
         if progress is not None and line_count % 5000 == 0:
@@ -578,6 +633,24 @@ def parse_rinex4_combined(line_iter, progress=None):
                 elif sys_letter == 'C' and model_type == 'D1D2' and len(vals) >= 8:
                     if iono.get('klobuchar') is None:
                         iono['klobuchar'] = rec
+            continue
+        if ln.startswith('> STO '):
+            parts = ln.split()
+            if len(parts) >= 4:
+                rec = _grab_sto(it)
+                rec['sat'] = parts[2]
+                rec['msg_type'] = parts[3]
+                if rec['code']:
+                    sto[rec['code']] = rec  # most recent of each system pair wins
+            continue
+        if ln.startswith('> EOP '):
+            parts = ln.split()
+            if len(parts) >= 4:
+                rec = _grab_eop(it)
+                rec['sat'] = parts[2]
+                rec['msg_type'] = parts[3]
+                if len(rec['values']) >= 9:
+                    eop = rec  # most recent
             continue
         if not ln.startswith('> EPH '):
             continue
@@ -779,6 +852,8 @@ def parse_rinex4_combined(line_iter, progress=None):
         'bds_cnv2': bds_cnv2,
         'bds_cnv3': bds_cnv3,
         'iono': iono,
+        'sto': sto,
+        'eop': eop,
     }
 
 

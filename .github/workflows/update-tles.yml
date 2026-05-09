@@ -117,6 +117,12 @@ jobs:
               with open('data/rinex4_iono.json', 'w', encoding='utf-8') as f:
                   json.dump({'iono': iono, 'date': date_str}, f)
               print(f"OK: data/rinex4_iono.json — {sum(1 for v in iono.values() if v)} models")
+          sto = parsed.get('sto') or {}
+          eop = parsed.get('eop')
+          if sto or eop:
+              with open('data/rinex4_systime.json', 'w', encoding='utf-8') as f:
+                  json.dump({'sto': sto, 'eop': eop, 'date': date_str}, f)
+              print(f"OK: data/rinex4_systime.json — {len(sto)} STO codes, EOP {'yes' if eop else 'no'}")
           PY
 
       - name: Commit and push
