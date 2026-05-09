@@ -2077,6 +2077,9 @@ function loadSpContent(sat) {
                 if (el) el.outerHTML = renderNavBlock(sat.constellation);
             }, 1000);
             if (sat.constellation === 'GPS' && data.ephemeris) startLnavBitsTicker();
+            if (sat.constellation === 'GLONASS' && data.glonass_fdma) startConstellationBitsTicker('glo', 2, 15);
+            if (sat.constellation === 'BEIDOU'  && data.beidou_d)     startConstellationBitsTicker('bds', 6, 3);
+            if (sat.constellation === 'GALILEO' && data.galileo_inav) startConstellationBitsTicker('gal', 1, 5);
             // If GPS RINEX sections are still pending, reload automatically once ready
             const lnavPending = sat.constellation === 'GPS' && !data.ephemeris;
             const cnavPending = sat.constellation === 'GPS' && !data.cnav;
@@ -2109,6 +2112,7 @@ function openSatPage(sat) {
 function closeSatPage() {
     clearInterval(detailRefreshTimer);
     clearInterval(lnavBitsTimer);
+    clearInterval(constellationBitsTimer);
     document.getElementById('sat-page').classList.remove('open');
 }
 
@@ -2985,7 +2989,56 @@ function buildGlonassStrings(g) {
         s5_id:    5,
         na: 0, tau_c: 0, n4: 0, tau_gps: 0,
     };
+    // Frame 1 almanac pairs: slots 1..5 from gloAlmanac
+    for (let pair = 0; pair < 5; pair++) {
+        const slot = pair + 1;
+        const a = (gloAlmanac && gloAlmanac[slot]) || {};
+        const k = `gloAlm${slot}_`;
+        v[k+'cn']        = /heal/i.test(a.health || '') ? 1 : 0;
+        v[k+'mn']        = 1;                                 // 01 = GLONASS-M
+        v[k+'nn']        = slot;
+        v[k+'tau_n']     = 0;
+        v[k+'lambda_n']  = 0;
+        v[k+'delta_i']   = 0;
+        v[k+'eps_n']     = 0;
+        v[k+'omega']     = 0;
+        v[k+'t_lambda']  = 0;
+        v[k+'delta_t']   = 0;
+        v[k+'delta_t_dot'] = 0;
+        v[k+'hn']        = a.channel != null ? a.channel : 0;
+        v[k+'ln']        = 0;
+    }
     return v;
+}
+
+// Almanac pair fields per ICD-GLONASS L1L2 v5.1, strings 6/8/10/12/14 = type A,
+// strings 7/9/11/13/15 = type B. Each pair carries one slot's almanac.
+function _gloAlmFields(stringNum, pairIndex) {
+    const common = [{start: 0, len: 4, name: 'string ID', fixed: stringNum, color: '#fa6'}];
+    const isA = stringNum % 2 === 0;  // strings 6,8,10,12,14
+    const k = `gloAlm${pairIndex + 1}_`;
+    if (isA) return [...common,
+        {start: 4,  len: 1,  name: 'Cn (health)',  fromKey: k+'cn', color: '#f55'},
+        {start: 5,  len: 2,  name: 'reserved',     fixed: 0, color: '#444'},
+        {start: 7,  len: 2,  name: 'Mn (block)',   fromKey: k+'mn', color: '#cf6'},
+        {start: 9,  len: 5,  name: 'nn (slot)',    fromKey: k+'nn', color: '#f8c'},
+        {start: 14, len: 10, name: 'τnA',           fromKey: k+'tau_n', signed: true, color: '#fa6'},
+        {start: 24, len: 21, name: 'λnA',           fromKey: k+'lambda_n', signed: true, color: '#0f8'},
+        {start: 45, len: 18, name: 'Δin',           fromKey: k+'delta_i', signed: true, color: '#0f8'},
+        {start: 63, len: 15, name: 'εn',            fromKey: k+'eps_n', color: '#0f8'},
+        {start: 78, len: 14, name: 'reserved',     fixed: 0, color: '#444'},
+        {start: 92, len: 8,  name: 'hamming',      fixed: 0, color: '#333', isParity: true},
+    ];
+    return [...common,
+        {start: 4,  len: 16, name: 'ωn',            fromKey: k+'omega', signed: true, color: '#0f8'},
+        {start: 20, len: 21, name: 'tλn',           fromKey: k+'t_lambda', color: '#88f'},
+        {start: 41, len: 22, name: 'ΔTn',           fromKey: k+'delta_t', signed: true, color: '#fc4'},
+        {start: 63, len: 7,  name: 'ΔTn_dot',       fromKey: k+'delta_t_dot', signed: true, color: '#fc4'},
+        {start: 70, len: 5,  name: 'Hn (freq ch)', fromKey: k+'hn', signed: true, color: '#cf6'},
+        {start: 75, len: 3,  name: 'ln (signal)',   fromKey: k+'ln', color: '#cf6'},
+        {start: 78, len: 14, name: 'reserved',     fixed: 0, color: '#444'},
+        {start: 92, len: 8,  name: 'hamming',      fixed: 0, color: '#333', isParity: true},
+    ];
 }
 
 // Field maps for each GLONASS string. 100 bits each. Frame markers / Hamming
@@ -2994,6 +3047,13 @@ function glonassStringFields(stringNum) {
     const common = [
         {start: 0, len: 4, name: 'string ID', fixed: stringNum, color: '#fa6'},
     ];
+    // Almanac strings: pairs (6,7) (8,9) (10,11) (12,13) (14,15) → almanac slots 1-5 of current frame
+    if (stringNum >= 6 && stringNum <= 15) {
+        // For frame 1, pair index 0..4 maps to slot 1..5; we display frame 1 statically.
+        const pairIndex = Math.floor((stringNum - 6) / 2);
+        // Frame 5 strings 14-15 are reserved system blocks, but treated as almanac pair for display
+        return _gloAlmFields(stringNum, pairIndex);
+    }
     if (stringNum === 1) return [...common,
         {start: 4,  len: 2,  name: 'P1',  fixed: 0, color: '#cf6'},
         {start: 6,  len: 12, name: 'tk',  fromKey: 'tk', color: '#88f'},
@@ -3117,7 +3177,11 @@ function renderConstellationBitsSection(spec) {
             for (let k = 0; k < f.len; k++) labels[f.start + k] = { name: f.name, color: f.color, isParity: f.isParity };
         }
         const wordsPerBlock = Math.ceil(spec.bitsPerBlock / spec.bitsPerWord);
-        html += `<div class="sf-block"><div class="sf-title">${spec.blockTitle(i)}</div><div class="sf-grid">`;
+        const blockId = spec.liveTrack ? ` id="${spec.sysKey}-block-${i}"` : '';
+        const liveSpan = spec.liveTrack
+            ? ` <span class="sf-live" id="${spec.sysKey}-live-${i}">— · in queue</span>`
+            : '';
+        html += `<div class="sf-block"${blockId}><div class="sf-title">${spec.blockTitle(i)}${liveSpan}</div><div class="sf-grid">`;
         for (let w = 0; w < wordsPerBlock; w++) {
             html += `<div class="sf-word"><div class="sf-wnum">${spec.wordPrefix}${w + 1}</div>`;
             for (let b = 0; b < spec.bitsPerWord; b++) {
@@ -3140,16 +3204,32 @@ function renderConstellationBitsSection(spec) {
 }
 
 function renderGlonassBits(g) {
+    const titles = {
+        1:'String 1 — Position X & velocity X',
+        2:'String 2 — Position Y & velocity Y',
+        3:'String 3 — Position Z & velocity Z',
+        4:'String 4 — Clock & frame ID',
+        5:'String 5 — System time & GLONASS-UTC',
+        6:'String 6 — Almanac slot 1 (type A)',
+        7:'String 7 — Almanac slot 1 (type B)',
+        8:'String 8 — Almanac slot 2 (type A)',
+        9:'String 9 — Almanac slot 2 (type B)',
+        10:'String 10 — Almanac slot 3 (type A)',
+        11:'String 11 — Almanac slot 3 (type B)',
+        12:'String 12 — Almanac slot 4 (type A)',
+        13:'String 13 — Almanac slot 4 (type B)',
+        14:'String 14 — Almanac slot 5 (type A)',
+        15:'String 15 — Almanac slot 5 (type B)',
+    };
     return renderConstellationBitsSection({
-        sysName: 'GLONASS L1OF/L2OF (5 strings × 100 bits = 1 frame, 10 s)',
+        sysName: 'GLONASS L1OF/L2OF (15 strings × 100 bits = 1 frame, 30 s)',
         sysKey: 'glo', wordPrefix: 'S',
-        bitsPerBlock: 100, bitsPerWord: 100, numBlocks: 5,
+        bitsPerBlock: 100, bitsPerWord: 100, numBlocks: 15,
         vals: buildGlonassStrings(g),
-        blockTitle: i => ({0:'String 1 — Position X & velocity X', 1:'String 2 — Position Y & velocity Y',
-                            2:'String 3 — Position Z & velocity Z', 3:'String 4 — Clock & frame ID',
-                            4:'String 5 — System time & GLONASS-UTC'}[i]),
+        blockTitle: i => titles[i + 1] || `String ${i + 1}`,
         getFields: i => glonassStringFields(i + 1),
-        description: 'GLONASS PZ-90 state vector broadcast (positions, velocities, accelerations) — strings 1-4 every 10 s; string 5 carries system time refs.',
+        description: 'GLONASS frame 1: strings 1-5 carry the SV\'s own state vector (positions, velocities, clock); strings 6-15 carry almanac for slots 1-5. Frames 2-5 cycle the rest of the 24-slot almanac. Each string is 2 s; full frame = 30 s.',
+        liveTrack: { period: 2, count: 15, sysKey: 'glo' },
     });
 }
 
@@ -3162,6 +3242,7 @@ function renderBeidouBits(b) {
         blockTitle: i => ['Subframe 1 — Clock & SatH1','Subframe 2 — Ephemeris (1/2)','Subframe 3 — Ephemeris (2/2)'][i],
         getFields: i => beidouD1Fields(i + 1),
         description: 'BeiDou D1 navigation message on B1I/B2I/B3I (MEO/IGSO sats). Subframes 4-5 carry the almanac.',
+        liveTrack: { period: 6, count: 3, sysKey: 'bds' },
     });
 }
 
@@ -3243,6 +3324,7 @@ function renderGalileoBits(g) {
                           'Word 4 — Clock & SVID','Word 5 — Iono + BGD + GST'][i],
         getFields: i => galileoInavFields(i + 1),
         description: 'Galileo I/NAV nominal page word types broadcast on E1-B (and E5b-I). Each word type is 128 bits ≈ 1 second.',
+        liveTrack: { period: 1, count: 5, sysKey: 'gal' },
     });
 }
 
@@ -3304,6 +3386,38 @@ function galileoInavFields(wt) {
         {start: 105, len: 23, name: 'reserved', fixed: 0, color: '#444'},
     ];
 }
+
+// Generic live ticker for the constellation broadcast-bits section.
+// Highlights the currently-broadcasting block based on its period.
+let constellationBitsTimer = null;
+function startConstellationBitsTicker(sysKey, period, count) {
+    clearInterval(constellationBitsTimer);
+    function tick() {
+        const root = document.getElementById(`sd-${sysKey}-bits`);
+        if (!root) { clearInterval(constellationBitsTimer); return; }
+        const nowMs = frozenTime || Date.now();
+        const sec = nowMs / 1000;
+        const frameSec = sec % (period * count);
+        const activeIdx = Math.floor(frameSec / period);
+        const subSec = frameSec - activeIdx * period;
+        for (let i = 0; i < count; i++) {
+            const block = document.getElementById(`${sysKey}-block-${i}`);
+            const live  = document.getElementById(`${sysKey}-live-${i}`);
+            if (!block) continue;
+            if (i === activeIdx) {
+                block.classList.add('sf-active');
+                if (live) live.textContent = `▶ broadcasting (${subSec.toFixed(1)}s / ${period}s)`;
+            } else {
+                block.classList.remove('sf-active');
+                const dist = ((i - activeIdx + count) % count);
+                if (live) live.textContent = `· next in ${(dist * period - subSec) | 0}s`;
+            }
+        }
+    }
+    tick();
+    constellationBitsTimer = setInterval(tick, 1000);
+}
+
 
 // ── Dilution of Precision (DOP) ───────────────────────────────────────
 let dopOn = false, dopRefreshTimer = null;
