@@ -74,10 +74,10 @@
         .btn-geo   { background: #1a6a3a; color: #e0f0ff; }
         .btn-clear { background: #4a1a1a; color: #ffaaaa; }
         #recv-status { margin-top: 8px; font-size: 0.8em; color: #5599cc; min-height: 1.2em; }
-        #btn-2d { color: #aaa; background: none; font-family: inherit; font-size: 0.85em; border: 1px solid #333; padding: 5px 12px; border-radius: 20px; cursor: pointer; transition: all 0.2s; }
-        #btn-2d:hover:not(:disabled) { color: #fff; border-color: #7ecfff; }
-        #btn-2d.active { color: #7ecfff; border-color: #7ecfff; background: rgba(126,207,255,0.1); }
-        #btn-2d:disabled { opacity: 0.3; cursor: not-allowed; }
+        #btn-2d, #btn-refresh-data, #btn-iono { color: #aaa; background: none; font-family: inherit; font-size: 0.85em; border: 1px solid #333; padding: 5px 12px; border-radius: 20px; cursor: pointer; transition: all 0.2s; }
+        #btn-2d:hover:not(:disabled), #btn-refresh-data:hover:not(:disabled), #btn-iono:hover:not(:disabled) { color: #fff; border-color: #7ecfff; }
+        #btn-2d.active, #btn-iono.active { color: #7ecfff; border-color: #7ecfff; background: rgba(126,207,255,0.1); }
+        #btn-2d:disabled, #btn-refresh-data:disabled, #btn-iono:disabled { opacity: 0.3; cursor: not-allowed; }
         #sky-canvas { display: none; position: absolute; inset: 0; z-index: 5; }
 
         #sat-panel { top: 60px; right: 20px; bottom: 20px; width: 280px; font-size: 0.82em; display: flex; flex-direction: column; overflow: hidden; }
@@ -282,7 +282,7 @@
             #const-toggles { gap: 3px; }
             .tog-btn { padding: 4px 7px; font-size: 0.66em; }
             #topbar-right { gap: 4px; }
-            #topbar a, #btn-2d { font-size: 0.68em; padding: 4px 8px; }
+            #topbar a, #btn-2d, #btn-refresh-data, #btn-iono { font-size: 0.68em; padding: 4px 8px; }
 
             /* Move zoom control above the bottom bar */
             #zoom-ctrl { bottom: 66px; }
@@ -1571,7 +1571,40 @@ function buildSatDetailHtml(data, sat, rangeKm, elev, az) {
     }
 
     html += '<div class="sd-section"><h4>NAVIGATION MESSAGE</h4>' + renderNavBlock(sat.constellation) + '</div>';
+    html += renderIonoSection(sat.constellation);
     return html;
+}
+
+function renderIonoSection(constellation) {
+    if (!ionoData) return '';
+    let model, title, labels;
+    if (constellation === 'GPS') {
+        model = 'klobuchar'; title = 'BROADCAST IONOSPHERE — KLOBUCHAR';
+        labels = ['α₀ (s)','α₁ (s/sc)','α₂ (s/sc²)','α₃ (s/sc³)','β₀ (s)','β₁ (s/sc)','β₂ (s/sc²)','β₃ (s/sc³)'];
+    } else if (constellation === 'BEIDOU') {
+        model = 'bdgim'; title = 'BROADCAST IONOSPHERE — BDGIM';
+        labels = ['α₁ (TECU)','α₂','α₃','α₄','α₅','α₆','α₇','α₈','α₉'];
+    } else if (constellation === 'GALILEO') {
+        model = 'nequick'; title = 'BROADCAST IONOSPHERE — NeQuick-G';
+        labels = ['aᵢ₀ (sfu)','aᵢ₁ (sfu/deg)','aᵢ₂ (sfu/deg²)','region flags'];
+    } else {
+        return '';  // GLONASS doesn't broadcast a single-frequency iono model
+    }
+    const rec = ionoData[model];
+    if (!rec || !rec.values || !rec.values.length) {
+        return `<div class="sd-section"><h4>${title}</h4>`
+             + `<div class="sd-row"><span class="sd-lbl">status</span>`
+             + `<span class="sd-val" style="color:#886">no data in current RINEX 4 file</span></div></div>`;
+    }
+    let body = '<div class="sd-section"><h4>' + title + '</h4>';
+    body += sdRow('Source SV', rec.sat || '—');
+    body += sdRow('Epoch (UTC)', rec.epoch || '—');
+    rec.values.slice(0, labels.length).forEach((v, i) => {
+        const fmt = (typeof v === 'number') ? v.toExponential(3) : v;
+        body += sdRow(labels[i], fmt);
+    });
+    body += '</div>';
+    return body;
 }
 
 // ── Full-page satellite detail ────────────────────────────────────────
@@ -1661,10 +1694,12 @@ function loadSpContent(sat) {
 
     Promise.all([
         fetch(`/api/satellite-detail?label=${encodeURIComponent(label)}&constellation=${sat.constellation}`).then(r => r.json()),
-        fetch('/api/data-freshness').then(r => r.json()).catch(() => ({}))
+        fetch('/api/data-freshness').then(r => r.json()).catch(() => ({})),
+        fetch('/api/ionosphere').then(r => r.json()).catch(() => ({iono:{}}))
     ])
-        .then(([data, fresh]) => {
+        .then(([data, fresh, iono]) => {
             dataFreshness = fresh || {};
+            ionoData = (iono && iono.iono) || ionoData || {};
             content.innerHTML = buildFreshnessBanner(sat.constellation) + buildSatDetailHtml(data, sat, rangeKm, elev, az);
             detailRefreshTimer = setInterval(() => {
                 const el = document.getElementById('sd-sf-display');
@@ -1964,13 +1999,16 @@ const IONO_W = 360, IONO_H = 180;
 
 function toggleIono() {
     const p = document.getElementById('iono-panel');
+    const btn = document.getElementById('btn-iono');
     const visible = p.style.display !== 'none';
     if (visible) {
         p.style.display = 'none';
+        btn.classList.remove('active');
         if (ionoEntity) { viewer.entities.remove(ionoEntity); ionoEntity = null; }
         return;
     }
     p.style.display = 'block';
+    btn.classList.add('active');
     fetch('/api/ionosphere').then(r => r.json()).then(d => {
         ionoData = d.iono || {};
         renderIono();
