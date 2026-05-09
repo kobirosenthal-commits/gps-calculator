@@ -2853,7 +2853,7 @@ function renderLnavSubframes(e) {
 // Page advances per 30s frame. 25-page cycle = 12.5 min.
 function currentSfPage(sf) {
     const nowMs = frozenTime || Date.now();
-    const secOfWeek = Math.floor((nowMs / 1000) - 315964800) % 604800;
+    const secOfWeek = Math.floor((nowMs / 1000) - 315964800 + 18) % 604800;
     const frameNum = Math.floor(secOfWeek / 30);
     return (frameNum % 25) + 1;
 }
@@ -2881,7 +2881,7 @@ function updateLnavBitsLive() {
     const root = document.getElementById('sd-lnav-bits');
     if (!root) { clearInterval(lnavBitsTimer); return; }
     const nowMs = frozenTime || Date.now();
-    const secOfWeek = Math.floor((nowMs / 1000) - 315964800) % 604800;
+    const secOfWeek = Math.floor((nowMs / 1000) - 315964800 + 18) % 604800;
     const tow17 = ((Math.floor(secOfWeek / 6) + 1) % 100800) & 0x1FFFF;
     const activeSf = ((Math.floor(secOfWeek / 6)) % 5) + 1;
     const subSec = (secOfWeek % 6) + (nowMs / 1000 - Math.floor(nowMs / 1000));
@@ -3389,15 +3389,19 @@ function galileoInavFields(wt) {
 
 // Generic live ticker for the constellation broadcast-bits section.
 // Highlights the currently-broadcasting block based on its period.
+// Uses GPS-epoch-relative time + 18-second leap offset to match the existing
+// "String X / N" indicator in the navigation-message card.
 let constellationBitsTimer = null;
 function startConstellationBitsTicker(sysKey, period, count) {
     clearInterval(constellationBitsTimer);
+    const gpsEpochMs = Date.UTC(1980, 0, 6);
     function tick() {
         const root = document.getElementById(`sd-${sysKey}-bits`);
         if (!root) { clearInterval(constellationBitsTimer); return; }
         const nowMs = frozenTime || Date.now();
-        const sec = nowMs / 1000;
-        const frameSec = sec % (period * count);
+        // Match currentNavMsg(): GPS-epoch + leap seconds, mod week
+        const tow = ((nowMs - gpsEpochMs) / 1000 + 18) % 604800;
+        const frameSec = tow % (period * count);
         const activeIdx = Math.floor(frameSec / period);
         const subSec = frameSec - activeIdx * period;
         for (let i = 0; i < count; i++) {
