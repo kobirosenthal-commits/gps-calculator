@@ -1731,6 +1731,16 @@ function buildSatDetailHtml(data, sat, rangeKm, elev, az) {
             '<div class="sd-pending">RINEX-4 data loading from BKG — auto-refreshing…</div></div>';
     }
 
+    if (sat.constellation === 'GLONASS' && data.glonass_fdma) {
+        html += renderGlonassBits(data.glonass_fdma);
+    }
+    if (sat.constellation === 'BEIDOU' && data.beidou_d) {
+        html += renderBeidouBits(data.beidou_d);
+    }
+    if (sat.constellation === 'GALILEO' && data.galileo_inav) {
+        html += renderGalileoBits(data.galileo_inav);
+    }
+
     if (data.tle) {
         html += '<div class="sd-section"><h4>TLE EPHEMERIS</h4>';
         html += sdRow('Name', data.tle.name);
@@ -2924,6 +2934,375 @@ function rerenderSfPage(sf, page) {
         title.firstChild.textContent = main + ' ';
         title.appendChild(live);  // keep live span at the end
     }
+}
+
+// ── GLONASS / BeiDou / Galileo subframe bit decoders ─────────────────
+// Each constellation has its own message structure (per ICD-GLONASS /
+// BDS-SIS-ICD / Galileo OS-SIS-ICD). The generic encoder above works on
+// flat bit positions, so each system just needs its own field maps,
+// value packer, and section renderer.
+
+// GLONASS L1OF/L2OF: superframe = 5 frames × 15 strings × 100 bits.
+// Strings 1-4 carry ephemeris (state vector), string 5 carries time refs.
+function buildGlonassStrings(g) {
+    // g has x_km/vx_kms/ax_kms2 etc. from RINEX 4 FDMA records (see gps_core).
+    // Scaling per ICD-GLONASS L1L2 v5.1.
+    const bits = (key, scale) => {
+        const v = g[key];
+        return v == null ? 0 : Math.round(v * scale);
+    };
+    const v = {
+        // String 1: P1 + tk + xn + vxn + axn
+        s1_id:    1,
+        tk:       0,                                          // 12-bit timestamp (frame start, derived live)
+        xn:       bits('x_km',   Math.pow(2, 11)),            // 27-bit signed
+        vxn:      bits('vx_kms', Math.pow(2, 20)),            // 24-bit signed
+        axn:      bits('ax_kms2', Math.pow(2, 30)),           // 5-bit signed
+        // String 2: Bn + P2 + tb + yn + vyn + ayn
+        s2_id:    2,
+        bn:       (g.health_flags || 0) & 0x07,
+        p2:       0, tb: Math.round((g.toe || 0) / 900),      // 7-bit, 15-min granularity
+        yn:       bits('y_km',   Math.pow(2, 11)),
+        vyn:      bits('vy_kms', Math.pow(2, 20)),
+        ayn:      bits('ay_kms2', Math.pow(2, 30)),
+        // String 3: P3 + γn + p + ln + zn + vzn + azn
+        s3_id:    3,
+        gamma_n:  bits('clock_freq_offset', Math.pow(2, 40)) || 0,
+        p3: 0, ln: 0,
+        zn:       bits('z_km',   Math.pow(2, 11)),
+        vzn:      bits('vz_kms', Math.pow(2, 20)),
+        azn:      bits('az_kms2', Math.pow(2, 30)),
+        // String 4: τn + ΔτN + En + P4 + FT + NT + n + M
+        s4_id:    4,
+        tau_n:    bits('clock_bias', Math.pow(2, 30)),
+        delta_tau:bits('delta_tau', Math.pow(2, 30)),
+        en:       (g.age_op || 0) & 0x1F,
+        ft:       (g.urai || 0) & 0x0F,
+        nt:       0,
+        n:        g.prn || 0,
+        m:        2,                                          // 2 = GLONASS-M, 3 = K
+        // String 5: NA + τC + N4 + τGPS + ln (ignored — system block)
+        s5_id:    5,
+        na: 0, tau_c: 0, n4: 0, tau_gps: 0,
+    };
+    return v;
+}
+
+// Field maps for each GLONASS string. 100 bits each. Frame markers / Hamming
+// dimmed because RINEX doesn't preserve them.
+function glonassStringFields(stringNum) {
+    const common = [
+        {start: 0, len: 4, name: 'string ID', fixed: stringNum, color: '#fa6'},
+    ];
+    if (stringNum === 1) return [...common,
+        {start: 4,  len: 2,  name: 'P1',  fixed: 0, color: '#cf6'},
+        {start: 6,  len: 12, name: 'tk',  fromKey: 'tk', color: '#88f'},
+        {start: 18, len: 24, name: 'vxn', fromKey: 'vxn', signed: true, color: '#fc4'},
+        {start: 42, len: 5,  name: 'axn', fromKey: 'axn', signed: true, color: '#fc4'},
+        {start: 47, len: 27, name: 'xn',  fromKey: 'xn',  signed: true, color: '#0f8'},
+        {start: 74, len: 18, name: 'reserved', fixed: 0, color: '#444'},
+        {start: 92, len: 8,  name: 'hamming', fixed: 0, color: '#333', isParity: true},
+    ];
+    if (stringNum === 2) return [...common,
+        {start: 4,  len: 3,  name: 'Bn',  fromKey: 'bn',  color: '#f55'},
+        {start: 7,  len: 1,  name: 'P2',  fromKey: 'p2',  color: '#cf6'},
+        {start: 8,  len: 7,  name: 'tb',  fromKey: 'tb',  color: '#88f'},
+        {start: 15, len: 5,  name: 'reserved', fixed: 0, color: '#444'},
+        {start: 20, len: 24, name: 'vyn', fromKey: 'vyn', signed: true, color: '#fc4'},
+        {start: 44, len: 5,  name: 'ayn', fromKey: 'ayn', signed: true, color: '#fc4'},
+        {start: 49, len: 27, name: 'yn',  fromKey: 'yn',  signed: true, color: '#0f8'},
+        {start: 76, len: 16, name: 'reserved', fixed: 0, color: '#444'},
+        {start: 92, len: 8,  name: 'hamming', fixed: 0, color: '#333', isParity: true},
+    ];
+    if (stringNum === 3) return [...common,
+        {start: 4,  len: 1,  name: 'P3',     fromKey: 'p3', color: '#cf6'},
+        {start: 5,  len: 11, name: 'γn',     fromKey: 'gamma_n', signed: true, color: '#fc4'},
+        {start: 16, len: 1,  name: 'p',      fixed: 0, color: '#666'},
+        {start: 17, len: 1,  name: 'ln',     fromKey: 'ln', color: '#cf6'},
+        {start: 18, len: 24, name: 'vzn',    fromKey: 'vzn', signed: true, color: '#fc4'},
+        {start: 42, len: 5,  name: 'azn',    fromKey: 'azn', signed: true, color: '#fc4'},
+        {start: 47, len: 27, name: 'zn',     fromKey: 'zn',  signed: true, color: '#0f8'},
+        {start: 74, len: 18, name: 'reserved', fixed: 0, color: '#444'},
+        {start: 92, len: 8,  name: 'hamming', fixed: 0, color: '#333', isParity: true},
+    ];
+    if (stringNum === 4) return [...common,
+        {start: 4,  len: 22, name: 'τn',    fromKey: 'tau_n', signed: true, color: '#fa6'},
+        {start: 26, len: 5,  name: 'Δτn',   fromKey: 'delta_tau', signed: true, color: '#fa6'},
+        {start: 31, len: 5,  name: 'En',    fromKey: 'en', color: '#f8c'},
+        {start: 36, len: 14, name: 'reserved', fixed: 0, color: '#444'},
+        {start: 50, len: 1,  name: 'P4',    fixed: 0, color: '#cf6'},
+        {start: 51, len: 4,  name: 'FT',    fromKey: 'ft', color: '#fa6'},
+        {start: 55, len: 3,  name: 'reserved', fixed: 0, color: '#444'},
+        {start: 58, len: 11, name: 'NT',    fromKey: 'nt', color: '#88f'},
+        {start: 69, len: 5,  name: 'n (slot)', fromKey: 'n', color: '#f8c'},
+        {start: 74, len: 2,  name: 'M (block)', fromKey: 'm', color: '#cf6'},
+        {start: 76, len: 16, name: 'reserved', fixed: 0, color: '#444'},
+        {start: 92, len: 8,  name: 'hamming', fixed: 0, color: '#333', isParity: true},
+    ];
+    // String 5
+    return [...common,
+        {start: 4,  len: 11, name: 'NA',    fromKey: 'na', color: '#88f'},
+        {start: 15, len: 32, name: 'τc',    fromKey: 'tau_c', signed: true, color: '#fa6'},
+        {start: 47, len: 5,  name: 'reserved', fixed: 0, color: '#444'},
+        {start: 52, len: 5,  name: 'N4',    fromKey: 'n4', color: '#0f8'},
+        {start: 57, len: 22, name: 'τGPS',  fromKey: 'tau_gps', signed: true, color: '#fa6'},
+        {start: 79, len: 1,  name: 'ln',    fixed: 0, color: '#cf6'},
+        {start: 80, len: 12, name: 'reserved', fixed: 0, color: '#444'},
+        {start: 92, len: 8,  name: 'hamming', fixed: 0, color: '#333', isParity: true},
+    ];
+}
+
+// BeiDou D1 (MEO/IGSO B1I) — 300-bit subframes, 6 s each, like GPS LNAV.
+// Subframes 1-3 carry clock + ephemeris; 4-5 carry almanac.
+function buildBeidouD1Values(b) {
+    return {
+        sat_h1: b.sat_h1 || 0, aodc: b.aodc || 0, urai: b.ura_index || 0,
+        wn: b.bdt_week || 0, toc: b.toc_sec || 0,
+        tgd1: b.tgd1, tgd2: b.tgd2, af0: b.af0, af1: b.af1, af2: b.af2,
+        aode: b.aode || 0, m0_semi: (b.m0_deg || 0) / 180,
+        delta_n_semi: (b.delta_n || 0) / Math.PI,
+        e: b.e, sqrt_a: b.sqrt_a, omega0_semi: (b.omega0_deg || 0) / 180,
+        omega_semi:  (b.omega_deg || 0) / 180, i0_semi: (b.i0_deg || 0) / 180,
+        omega_dot_semi: (b.omega_dot || 0) / Math.PI,
+        idot_semi:   (b.idot || 0) / Math.PI,
+        toe: b.toe, crs: b.crs, crc: b.crc, cuc: b.cuc, cus: b.cus, cic: b.cic, cis: b.cis,
+    };
+}
+
+// Galileo I/NAV nominal page word types — 128 bits per word, 1 second.
+// Word types 1-5 carry the operational nav data (ephemeris / clock / iono).
+function buildGalileoInavValues(g) {
+    return {
+        iodnav: g.iodnav || 0,
+        toe:    g.toe || 0, m0_semi: (g.m0_deg || 0) / 180,
+        e: g.e, sqrt_a: g.sqrt_a, omega0_semi: (g.omega0_deg || 0) / 180,
+        i0_semi: (g.i0_deg || 0) / 180, omega_semi: (g.omega_deg || 0) / 180,
+        idot_semi: (g.idot || 0) / Math.PI,
+        omega_dot_semi: (g.omega_dot || 0) / Math.PI,
+        delta_n_semi: (g.delta_n || 0) / Math.PI,
+        cuc: g.cuc, cus: g.cus, crc: g.crc, crs: g.crs, cic: g.cic, cis: g.cis,
+        sisa: g.sisa, svid: g.svid || 0,
+        toc: g.toe, af0: g.af0, af1: g.af1, af2: g.af2,
+        bgd_e5a_e1: g.bgd_e5a_e1, bgd_e5b_e1: g.bgd_e5b_e1,
+        sv_health: g.sv_health || 0,
+    };
+}
+
+// Generic constellation bit-section render. Renders N words/strings/subframes
+// driven by a frame spec and returns the section HTML.
+// frameSpec = { sysName, totalBitsPerBlock, numBlocks, blockTitle(i),
+//               getFields(i), description }
+function renderConstellationBitsSection(spec) {
+    let html = `<div class="sd-section" id="sd-${spec.sysKey}-bits" style="grid-column:1/-1"><h4>BROADCAST BITS — ${spec.sysName}</h4>`;
+    html += `<div class="sf-hint">${spec.description}</div>`;
+    for (let i = 0; i < spec.numBlocks; i++) {
+        const bits = new Array(spec.bitsPerBlock).fill(0);
+        const labels = new Array(spec.bitsPerBlock).fill(null);
+        const fields = spec.getFields(i);
+        for (const f of fields) {
+            let raw = 0;
+            if (f.fixed !== undefined) raw = f.fixed;
+            else if (f.fromKey !== undefined) {
+                const v = spec.vals[f.fromKey];
+                if (v == null || isNaN(v)) raw = 0;
+                else if (f.scale) {
+                    let scaled = Math.round(v * f.scale);
+                    if (f.shift) scaled = Math.trunc(scaled / Math.pow(2, f.shift));
+                    raw = f.signed ? Number(_twos(scaled, f.len)) : (scaled & ((1 << Math.min(f.len, 30)) - 1));
+                } else raw = (typeof v === 'number')
+                    ? (f.signed ? Number(_twos(v, f.len)) : (v & ((1 << Math.min(f.len, 30)) - 1)))
+                    : 0;
+            }
+            _writeBits(bits, f.start, f.len, raw);
+            for (let k = 0; k < f.len; k++) labels[f.start + k] = { name: f.name, color: f.color, isParity: f.isParity };
+        }
+        const wordsPerBlock = Math.ceil(spec.bitsPerBlock / spec.bitsPerWord);
+        html += `<div class="sf-block"><div class="sf-title">${spec.blockTitle(i)}</div><div class="sf-grid">`;
+        for (let w = 0; w < wordsPerBlock; w++) {
+            html += `<div class="sf-word"><div class="sf-wnum">${spec.wordPrefix}${w + 1}</div>`;
+            for (let b = 0; b < spec.bitsPerWord; b++) {
+                const bi = w * spec.bitsPerWord + b;
+                if (bi >= spec.bitsPerBlock) break;
+                const lbl = labels[bi] || { name: '?', color: '#222' };
+                html += `<span class="sf-bit" style="background:${lbl.color}${lbl.isParity ? ';opacity:0.4' : ''}" title="${lbl.name} · bit ${bi}">${bits[bi]}</span>`;
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+        const seen = new Set();
+        const legend = fields.filter(f => !seen.has(f.name) && (seen.add(f.name), !f.isParity && f.name !== 'reserved'));
+        html += '<div class="sf-legend">';
+        legend.forEach(f => { html += `<span class="sf-leg-item"><span class="sf-leg-sw" style="background:${f.color}"></span>${f.name}</span>`; });
+        html += '</div></div>';
+    }
+    html += '</div>';
+    return html;
+}
+
+function renderGlonassBits(g) {
+    return renderConstellationBitsSection({
+        sysName: 'GLONASS L1OF/L2OF (5 strings × 100 bits = 1 frame, 10 s)',
+        sysKey: 'glo', wordPrefix: 'S',
+        bitsPerBlock: 100, bitsPerWord: 100, numBlocks: 5,
+        vals: buildGlonassStrings(g),
+        blockTitle: i => ({0:'String 1 — Position X & velocity X', 1:'String 2 — Position Y & velocity Y',
+                            2:'String 3 — Position Z & velocity Z', 3:'String 4 — Clock & frame ID',
+                            4:'String 5 — System time & GLONASS-UTC'}[i]),
+        getFields: i => glonassStringFields(i + 1),
+        description: 'GLONASS PZ-90 state vector broadcast (positions, velocities, accelerations) — strings 1-4 every 10 s; string 5 carries system time refs.',
+    });
+}
+
+function renderBeidouBits(b) {
+    return renderConstellationBitsSection({
+        sysName: 'BeiDou D1 (3 subframes × 300 bits = clock + ephemeris, 18 s)',
+        sysKey: 'bds', wordPrefix: 'W',
+        bitsPerBlock: 300, bitsPerWord: 30, numBlocks: 3,
+        vals: buildBeidouD1Values(b),
+        blockTitle: i => ['Subframe 1 — Clock & SatH1','Subframe 2 — Ephemeris (1/2)','Subframe 3 — Ephemeris (2/2)'][i],
+        getFields: i => beidouD1Fields(i + 1),
+        description: 'BeiDou D1 navigation message on B1I/B2I/B3I (MEO/IGSO sats). Subframes 4-5 carry the almanac.',
+    });
+}
+
+function beidouD1Fields(sf) {
+    const hdr = [
+        {start: 0,   len: 11, name: 'PREAMBLE',  fixed: 0x712, color: '#666'},
+        {start: 11,  len: 4,  name: 'reserved',  fixed: 0, color: '#444'},
+        {start: 15,  len: 3,  name: 'subframe ID', fixed: sf, color: '#fa6'},
+        {start: 18,  len: 8,  name: 'SOW MSB',   fromKey: 'sow_msb', color: '#88f'},
+        {start: 26,  len: 4,  name: 'parity',    fixed: 0, color: '#333', isParity: true},
+        {start: 30,  len: 12, name: 'SOW LSB',   fromKey: 'sow_lsb', color: '#88f'},
+    ];
+    if (sf === 1) return [...hdr,
+        {start: 42, len: 1,  name: 'SatH1', fromKey: 'sat_h1', mask: 1, color: '#f55'},
+        {start: 43, len: 5,  name: 'AODC',  fromKey: 'aodc', color: '#f8c'},
+        {start: 48, len: 4,  name: 'URAI',  fromKey: 'urai', color: '#fa6'},
+        {start: 52, len: 4,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        {start: 56, len: 13, name: 'WN',    fromKey: 'wn',   color: '#0f8'},
+        {start: 69, len: 9,  name: 'toc MSB', fromKey: 'toc', scale: 1/8, color: '#88f'},
+        {start: 78, len: 4,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        {start: 82, len: 8,  name: 'toc LSB', fromKey: 'toc', scale: 1/8, mask: 0xFF, color: '#88f'},
+        {start: 90, len: 10, name: 'TGD1',  fromKey: 'tgd1', scale: 1e10, signed: true, color: '#fc4'},
+        {start: 100, len: 6,  name: 'TGD2',  fromKey: 'tgd2', scale: 1e10, signed: true, color: '#fc4'},
+        {start: 106, len: 4,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        {start: 110, len: 24, name: 'a₀ (clock)', fromKey: 'af0', scale: Math.pow(2,33), signed: true, color: '#fa6'},
+        {start: 134, len: 4,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        {start: 138, len: 22, name: 'a₁ (clock)', fromKey: 'af1', scale: Math.pow(2,50), signed: true, color: '#fa6'},
+        {start: 160, len: 11, name: 'a₂ (clock)', fromKey: 'af2', scale: Math.pow(2,66), signed: true, color: '#fa6'},
+        {start: 171, len: 4,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        {start: 175, len: 5,  name: 'AODE',  fromKey: 'aode', color: '#f8c'},
+        {start: 180, len: 120, name: 'reserved', fixed: 0, color: '#444'},
+    ];
+    if (sf === 2) return [...hdr,
+        {start: 42, len: 16, name: 'Δn',  fromKey: 'delta_n_semi', scale: Math.pow(2,43), signed: true, color: '#fc4'},
+        {start: 58, len: 8,  name: 'Cuc MSB', fromKey: 'cuc', scale: Math.pow(2,31), signed: true, shift: 10, color: '#fc4'},
+        {start: 66, len: 4,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        {start: 70, len: 14, name: 'Cuc LSB', fromKey: 'cuc', scale: Math.pow(2,31), signed: true, mask: 0x3FFF, color: '#fc4'},
+        {start: 84, len: 18, name: 'M₀ MSB',  fromKey: 'm0_semi', scale: Math.pow(2,31), signed: true, shift: 14, color: '#0f8'},
+        {start: 102, len: 4, name: 'parity',  fixed: 0, color: '#333', isParity: true},
+        {start: 106, len: 14, name: 'M₀ LSB', fromKey: 'm0_semi', scale: Math.pow(2,31), signed: true, mask: 0x3FFF, color: '#0f8'},
+        {start: 120, len: 16, name: 'Cus MSB', fromKey: 'cus', scale: Math.pow(2,31), signed: true, shift: 2, color: '#fc4'},
+        {start: 136, len: 4,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        {start: 140, len: 2,  name: 'Cus LSB', fromKey: 'cus', scale: Math.pow(2,31), signed: true, mask: 0x3, color: '#fc4'},
+        {start: 142, len: 22, name: 'e MSB',   fromKey: 'e', scale: Math.pow(2,33), shift: 10, color: '#0f8'},
+        {start: 164, len: 4,  name: 'parity',  fixed: 0, color: '#333', isParity: true},
+        {start: 168, len: 10, name: 'e LSB',   fromKey: 'e', scale: Math.pow(2,33), mask: 0x3FF, color: '#0f8'},
+        {start: 178, len: 22, name: '√A MSB',  fromKey: 'sqrt_a', scale: Math.pow(2,19), shift: 10, color: '#0f8'},
+        {start: 200, len: 4,  name: 'parity',  fixed: 0, color: '#333', isParity: true},
+        {start: 204, len: 10, name: '√A LSB',  fromKey: 'sqrt_a', scale: Math.pow(2,19), mask: 0x3FF, color: '#0f8'},
+        {start: 214, len: 18, name: 'CIC MSB', fromKey: 'cic', scale: Math.pow(2,31), signed: true, shift: 0, color: '#fc4'},
+        {start: 232, len: 68, name: 'reserved', fixed: 0, color: '#444'},
+    ];
+    // sf === 3
+    return [...hdr,
+        {start: 42, len: 18, name: 'i₀ MSB',  fromKey: 'i0_semi', scale: Math.pow(2,31), signed: true, shift: 14, color: '#0f8'},
+        {start: 60, len: 6,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        {start: 66, len: 14, name: 'i₀ LSB',  fromKey: 'i0_semi', scale: Math.pow(2,31), signed: true, mask: 0x3FFF, color: '#0f8'},
+        {start: 80, len: 17, name: 'Crc',     fromKey: 'crc', scale: Math.pow(2,6), signed: true, color: '#fc4'},
+        {start: 97, len: 5,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        {start: 102, len: 17, name: 'Crs',    fromKey: 'crs', scale: Math.pow(2,6), signed: true, color: '#fc4'},
+        {start: 119, len: 13, name: 'Ωdot MSB', fromKey: 'omega_dot_semi', scale: Math.pow(2,43), signed: true, shift: 11, color: '#fc4'},
+        {start: 132, len: 4,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        {start: 136, len: 11, name: 'Ωdot LSB', fromKey: 'omega_dot_semi', scale: Math.pow(2,43), signed: true, mask: 0x7FF, color: '#fc4'},
+        {start: 147, len: 19, name: 'ω MSB',  fromKey: 'omega_semi', scale: Math.pow(2,31), signed: true, shift: 13, color: '#0f8'},
+        {start: 166, len: 4,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        {start: 170, len: 13, name: 'ω LSB',  fromKey: 'omega_semi', scale: Math.pow(2,31), signed: true, mask: 0x1FFF, color: '#0f8'},
+        {start: 183, len: 14, name: 'IDOT',   fromKey: 'idot_semi', scale: Math.pow(2,43), signed: true, color: '#fc4'},
+        {start: 197, len: 103, name: 'reserved', fixed: 0, color: '#444'},
+    ];
+}
+
+function renderGalileoBits(g) {
+    return renderConstellationBitsSection({
+        sysName: 'Galileo I/NAV (5 word types × 128 bits, E1-B / E5b-I)',
+        sysKey: 'gal', wordPrefix: 'WT',
+        bitsPerBlock: 128, bitsPerWord: 64, numBlocks: 5,
+        vals: buildGalileoInavValues(g),
+        blockTitle: i => ['Word 1 — Ephemeris (1/4)','Word 2 — Ephemeris (2/4)','Word 3 — Ephemeris (3/4) + SISA',
+                          'Word 4 — Clock & SVID','Word 5 — Iono + BGD + GST'][i],
+        getFields: i => galileoInavFields(i + 1),
+        description: 'Galileo I/NAV nominal page word types broadcast on E1-B (and E5b-I). Each word type is 128 bits ≈ 1 second.',
+    });
+}
+
+function galileoInavFields(wt) {
+    const hdr = [
+        {start: 0, len: 6, name: 'word type', fixed: wt, color: '#fa6'},
+    ];
+    if (wt === 1) return [...hdr,
+        {start: 6,  len: 10, name: 'IODnav', fromKey: 'iodnav', color: '#f8c'},
+        {start: 16, len: 14, name: 'toe',    fromKey: 'toe', scale: 1/60, color: '#88f'},
+        {start: 30, len: 32, name: 'M₀',     fromKey: 'm0_semi', scale: Math.pow(2,31), signed: true, color: '#0f8'},
+        {start: 62, len: 32, name: 'e',      fromKey: 'e', scale: Math.pow(2,33), color: '#0f8'},
+        {start: 94, len: 32, name: '√A',     fromKey: 'sqrt_a', scale: Math.pow(2,19), color: '#0f8'},
+        {start: 126, len: 2, name: 'reserved', fixed: 0, color: '#444'},
+    ];
+    if (wt === 2) return [...hdr,
+        {start: 6,  len: 10, name: 'IODnav', fromKey: 'iodnav', color: '#f8c'},
+        {start: 16, len: 32, name: 'Ω₀',     fromKey: 'omega0_semi', scale: Math.pow(2,31), signed: true, color: '#0f8'},
+        {start: 48, len: 32, name: 'i₀',     fromKey: 'i0_semi', scale: Math.pow(2,31), signed: true, color: '#0f8'},
+        {start: 80, len: 32, name: 'ω',      fromKey: 'omega_semi', scale: Math.pow(2,31), signed: true, color: '#0f8'},
+        {start: 112, len: 14, name: 'IDOT',  fromKey: 'idot_semi', scale: Math.pow(2,43), signed: true, color: '#fc4'},
+        {start: 126, len: 2,  name: 'reserved', fixed: 0, color: '#444'},
+    ];
+    if (wt === 3) return [...hdr,
+        {start: 6,  len: 10, name: 'IODnav', fromKey: 'iodnav', color: '#f8c'},
+        {start: 16, len: 24, name: 'Ωdot',   fromKey: 'omega_dot_semi', scale: Math.pow(2,43), signed: true, color: '#fc4'},
+        {start: 40, len: 16, name: 'Δn',     fromKey: 'delta_n_semi', scale: Math.pow(2,43), signed: true, color: '#fc4'},
+        {start: 56, len: 16, name: 'Cuc',    fromKey: 'cuc', scale: Math.pow(2,29), signed: true, color: '#fc4'},
+        {start: 72, len: 16, name: 'Cus',    fromKey: 'cus', scale: Math.pow(2,29), signed: true, color: '#fc4'},
+        {start: 88, len: 16, name: 'Crc',    fromKey: 'crc', scale: Math.pow(2,5),  signed: true, color: '#fc4'},
+        {start: 104, len: 16, name: 'Crs',   fromKey: 'crs', scale: Math.pow(2,5),  signed: true, color: '#fc4'},
+        {start: 120, len: 8,  name: 'SISA',  fromKey: 'sisa', color: '#f55'},
+    ];
+    if (wt === 4) return [...hdr,
+        {start: 6,  len: 10, name: 'IODnav', fromKey: 'iodnav', color: '#f8c'},
+        {start: 16, len: 6,  name: 'SVID',   fromKey: 'svid', color: '#f8c'},
+        {start: 22, len: 16, name: 'Cic',    fromKey: 'cic', scale: Math.pow(2,29), signed: true, color: '#fc4'},
+        {start: 38, len: 16, name: 'Cis',    fromKey: 'cis', scale: Math.pow(2,29), signed: true, color: '#fc4'},
+        {start: 54, len: 14, name: 't0c',    fromKey: 'toc', scale: 1/60, color: '#88f'},
+        {start: 68, len: 31, name: 'af₀',    fromKey: 'af0', scale: Math.pow(2,34), signed: true, color: '#fa6'},
+        {start: 99, len: 21, name: 'af₁',    fromKey: 'af1', scale: Math.pow(2,46), signed: true, color: '#fa6'},
+        {start: 120, len: 6,  name: 'af₂',    fromKey: 'af2', scale: Math.pow(2,59), signed: true, color: '#fa6'},
+        {start: 126, len: 2,  name: 'reserved', fixed: 0, color: '#444'},
+    ];
+    // wt === 5
+    return [...hdr,
+        {start: 6,  len: 11, name: 'aᵢ₀',    fromKey: 'ai0', scale: Math.pow(2,2), color: '#0fa'},
+        {start: 17, len: 11, name: 'aᵢ₁',    fromKey: 'ai1', scale: Math.pow(2,8), signed: true, color: '#0fa'},
+        {start: 28, len: 14, name: 'aᵢ₂',    fromKey: 'ai2', scale: Math.pow(2,15), signed: true, color: '#0fa'},
+        {start: 42, len: 5,  name: 'storm flags', fromKey: 'storm', color: '#f55'},
+        {start: 47, len: 10, name: 'BGD E1/E5a', fromKey: 'bgd_e5a_e1', scale: Math.pow(2,32), signed: true, color: '#fa6'},
+        {start: 57, len: 10, name: 'BGD E1/E5b', fromKey: 'bgd_e5b_e1', scale: Math.pow(2,32), signed: true, color: '#fa6'},
+        {start: 67, len: 2,  name: 'E5b HS',  fromKey: 'sv_health', shift: 4, mask: 3, color: '#f55'},
+        {start: 69, len: 2,  name: 'E1B HS',  fromKey: 'sv_health', shift: 1, mask: 3, color: '#f55'},
+        {start: 71, len: 1,  name: 'E5b DVS', fromKey: 'sv_health', shift: 3, mask: 1, color: '#f55'},
+        {start: 72, len: 1,  name: 'E1B DVS', fromKey: 'sv_health', shift: 0, mask: 1, color: '#f55'},
+        {start: 73, len: 12, name: 'GST WN',  fromKey: 'gst_wn', color: '#0f8'},
+        {start: 85, len: 20, name: 'GST TOW', fromKey: 'gst_tow', color: '#88f'},
+        {start: 105, len: 23, name: 'reserved', fixed: 0, color: '#444'},
+    ];
 }
 
 // ── Dilution of Precision (DOP) ───────────────────────────────────────
