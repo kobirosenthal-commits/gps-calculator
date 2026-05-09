@@ -730,6 +730,51 @@ def rinex_status():
     })
 
 
+@app.route('/api/refresh-data', methods=['POST'])
+def refresh_data_endpoint():
+    """Run the local data-refresh (TLEs, RINEX 2, RINEX 4, re-parse JSONs).
+    Useful when running on a machine that has bandwidth/CPU headroom (i.e.
+    your PC). Reload the in-memory caches afterwards."""
+    try:
+        from refresh_data import refresh_all
+        lines = []
+        summary = refresh_all(log_fn=lines.append)
+        # Reload in-memory caches without restart
+        try:
+            global rinex_data
+            rpath = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 'data', 'gps_rinex2.txt')
+            with open(rpath, 'r', encoding='utf-8') as f:
+                eph = parse_rinex2_nav(f.read())
+            if eph:
+                from datetime import datetime as _dt
+                rinex_data = {'ephemeris': eph,
+                              'date': _dt.utcfromtimestamp(os.path.getmtime(rpath)).strftime('%Y-%m-%d')}
+                lines.append(f"reload rinex2 OK: {len(eph)} PRNs")
+        except Exception as e:
+            lines.append(f"reload rinex2 fail: {e}")
+        try:
+            for fname, varname, _ in [
+                ('rinex4_gps_cnav.json', 'rinex4_data',    'GPS CNAV'),
+                ('rinex4_bds_d.json',    'bei_d_data',     'BeiDou D1/D2'),
+                ('rinex4_bds_cnv1.json', 'bei_cnv1_data',  'BeiDou CNV1'),
+                ('rinex4_bds_cnv2.json', 'bei_cnv2_data',  'BeiDou CNV2'),
+                ('rinex4_bds_cnv3.json', 'bei_cnv3_data',  'BeiDou CNV3'),
+                ('rinex4_gal_inav.json', 'gal_inav_data',  'Galileo I/NAV'),
+                ('rinex4_glo_fdma.json', 'glo_fdma_data',  'GLONASS FDMA'),
+                ('rinex4_gal_fnav.json', 'gal_fnav_data',  'Galileo F/NAV'),
+            ]:
+                blob = _load_rinex4_json(fname)
+                if blob and blob['ephemeris']:
+                    globals()[varname] = blob
+        except Exception as e:
+            lines.append(f"reload rinex4 fail: {e}")
+        return jsonify({'ok': True, 'summary': summary, 'log': lines})
+    except Exception as e:
+        import traceback
+        return jsonify({'ok': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
+
+
 @app.route('/api/data-freshness', methods=['GET'])
 def data_freshness():
     """Return mtimes of the data files so the UI can show 'last updated' tags."""

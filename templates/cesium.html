@@ -367,6 +367,7 @@
         <label class="trail-toggle"><input type="checkbox" id="tog-trail" checked onchange="toggleTrail(this.checked)"> Trails</label>
     </div>
     <div id="topbar-right">
+        <button id="btn-refresh-data" onclick="refreshData()" title="Re-fetch TLEs and RINEX from upstream sources">⟳ Refresh data</button>
         <button id="btn-2d" disabled onclick="toggle2D()">⊙ 2D Sky Plot</button>
         <a href="/calculator">⚙ Calculator</a>
     </div>
@@ -614,6 +615,33 @@ function sigBadges(signals) {
 // ── Constellation visibility ──────────────────────────────────────────
 const enabledConst = { GPS: true, GLONASS: true, BEIDOU: true, GALILEO: true };
 let trailsOn = true;
+
+function refreshData() {
+    const btn = document.getElementById('btn-refresh-data');
+    const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = '⟳ Refreshing…';
+    fetch('/api/refresh-data', { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+            if (d.ok) {
+                btn.textContent = '✓ Refreshed';
+                // Update the freshness banner if open, and force a live-positions refresh
+                fetch('/api/data-freshness').then(r => r.json()).then(f => { dataFreshness = f || {}; });
+                if (typeof fetchLive === 'function') fetchLive();
+            } else {
+                btn.textContent = '✗ Failed';
+                console.error('Refresh failed:', d);
+                alert('Refresh failed: ' + (d.error || 'see console'));
+            }
+        })
+        .catch(e => {
+            btn.textContent = '✗ Failed';
+            alert('Refresh failed: ' + e);
+        })
+        .finally(() => {
+            setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 4000);
+        });
+}
 
 function toggleTrail(on) {
     trailsOn = on;
