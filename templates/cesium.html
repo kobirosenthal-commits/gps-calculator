@@ -287,7 +287,7 @@
         .sf-block { margin-bottom: 14px; }
         .sf-title { font-size: 0.78em; color: #7ecfff; letter-spacing: 0.8px; margin-bottom: 4px; font-weight: 600; }
         .sf-grid { display: flex; flex-direction: column; gap: 2px; background: rgba(0,20,50,0.55); border: 1px solid #1a3a5c; border-radius: 4px; padding: 4px; }
-        .sf-word { display: grid; grid-template-columns: 28px 1fr; gap: 2px; align-items: center; }
+        .sf-word { display: grid; grid-template-columns: 44px 1fr; gap: 2px; align-items: center; }
         .sf-word-cells { display: grid; gap: 1px; }
         .sf-wnum { font-size: 0.65em; color: #5599cc; padding: 0 2px; font-family: monospace; text-align: right; }
         .sf-bit {
@@ -3190,7 +3190,12 @@ function renderConstellationBitsSection(spec) {
             const startBit = w * spec.bitsPerWord;
             const endBit = Math.min(startBit + spec.bitsPerWord, spec.bitsPerBlock);
             const cellCount = endBit - startBit;
-            html += `<div class="sf-word"><div class="sf-wnum">${spec.wordPrefix}${w + 1}</div><div class="sf-word-cells" style="grid-template-columns:repeat(${cellCount}, minmax(0, 1fr))">`;
+            const wlabel = wordsPerBlock === 1
+                ? `${spec.wordPrefix}1`
+                : (spec.wordPrefix === '' || spec.wordPrefix === 'L'
+                    ? `${startBit + 1}-${endBit}`
+                    : `${spec.wordPrefix}${w + 1}`);
+            html += `<div class="sf-word"><div class="sf-wnum">${wlabel}</div><div class="sf-word-cells" style="grid-template-columns:repeat(${cellCount}, minmax(0, 1fr))">`;
             for (let bi = startBit; bi < endBit; bi++) {
                 const lbl = labels[bi] || { name: '?', color: '#222' };
                 html += `<span class="sf-bit" style="background:${lbl.color}${lbl.isParity ? ';opacity:0.4' : ''}" title="${lbl.name} · bit ${bi}">${bits[bi]}</span>`;
@@ -3228,8 +3233,8 @@ function renderGlonassBits(g) {
     };
     return renderConstellationBitsSection({
         sysName: 'GLONASS L1OF/L2OF (15 strings × 100 bits = 1 frame, 30 s)',
-        sysKey: 'glo', wordPrefix: 'S',
-        bitsPerBlock: 100, bitsPerWord: 100, numBlocks: 15,
+        sysKey: 'glo', wordPrefix: 'L',
+        bitsPerBlock: 100, bitsPerWord: 50, numBlocks: 15,
         vals: buildGlonassStrings(g),
         blockTitle: i => titles[i + 1] || `String ${i + 1}`,
         getFields: i => glonassStringFields(i + 1),
