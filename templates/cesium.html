@@ -3239,16 +3239,184 @@ function renderGlonassBits(g) {
 }
 
 function renderBeidouBits(b) {
+    const initialP4 = currentBdsPage();
+    const initialP5 = currentBdsPage();
+    _lastBdsPage = initialP4;
+    window._lastBdsVals = Object.assign({}, buildBeidouD1Values(b), buildBdsExtras());
+    const titles = i => {
+        if (i === 0) return 'Subframe 1 — Clock & SatH1';
+        if (i === 1) return 'Subframe 2 — Ephemeris (1/2)';
+        if (i === 2) return 'Subframe 3 — Ephemeris (2/2)';
+        if (i === 3) return `Subframe 4 — Page ${initialP4} (${bdsSf4PageDesc(initialP4)})`;
+        return `Subframe 5 — Page ${initialP5} (${bdsSf5PageDesc(initialP5)})`;
+    };
     return renderConstellationBitsSection({
-        sysName: 'BeiDou D1 (3 subframes × 300 bits = clock + ephemeris, 18 s)',
+        sysName: 'BeiDou D1 (5 subframes × 300 bits, full frame 30 s)',
         sysKey: 'bds', wordPrefix: 'W',
-        bitsPerBlock: 300, bitsPerWord: 30, numBlocks: 3,
-        vals: buildBeidouD1Values(b),
-        blockTitle: i => ['Subframe 1 — Clock & SatH1','Subframe 2 — Ephemeris (1/2)','Subframe 3 — Ephemeris (2/2)'][i],
-        getFields: i => beidouD1Fields(i + 1),
-        description: 'BeiDou D1 navigation message on B1I/B2I/B3I (MEO/IGSO sats). Subframes 4-5 carry the almanac.',
-        liveTrack: { period: 6, count: 3, sysKey: 'bds' },
+        bitsPerBlock: 300, bitsPerWord: 30, numBlocks: 5,
+        vals: Object.assign({}, buildBeidouD1Values(b), buildBdsExtras()),
+        blockTitle: titles,
+        getFields: i => {
+            if (i < 3) return beidouD1Fields(i + 1);
+            const sf = i + 1;
+            const page = sf === 4 ? currentBdsPage() : currentBdsPage();
+            return beidouD1PageFields(sf, page);
+        },
+        description: 'BeiDou D1 navigation on B1I/B2I/B3I (MEO/IGSO). Subframes 1-3 are repeated each 30-s frame; SF4 cycles through 24 pages of almanacs (SVs 1-24); SF5 carries almanacs for SVs 25-30, ionosphere (Klobuchar), BDT-UTC, and inter-system offsets.',
+        liveTrack: { period: 6, count: 5, sysKey: 'bds' },
     });
+}
+
+// Page advances each 30-s frame
+function currentBdsPage() {
+    const nowMs = frozenTime || Date.now();
+    const gpsEpochMs = Date.UTC(1980, 0, 6);
+    const tow = ((nowMs - gpsEpochMs) / 1000 + 18) % 604800;
+    return (Math.floor(tow / 30) % 24) + 1;
+}
+function bdsSf4PageDesc(p) {
+    if (p >= 1 && p <= 24) return `almanac C${String(p).padStart(2,'0')}`;
+    return 'reserved';
+}
+function bdsSf5PageDesc(p) {
+    if (p >= 1 && p <= 6) return `almanac C${String(p + 24).padStart(2,'0')}`;
+    if (p === 7)  return 'Hea1-Hea19 health';
+    if (p === 8)  return 'WNa + toa + Hea20-30';
+    if (p === 9)  return 'Klobuchar α/β';
+    if (p === 10) return 'BDT-UTC params';
+    if (p === 24) return 'reserved (system)';
+    return 'BDT-GNSS time offsets';
+}
+
+function buildBdsExtras() {
+    const extras = {};
+    // Klobuchar α/β from current iono data
+    const k = (ionoData && ionoData.klobuchar && ionoData.klobuchar.values) || [];
+    extras.bds_alpha0 = k[0] || 0; extras.bds_alpha1 = k[1] || 0;
+    extras.bds_alpha2 = k[2] || 0; extras.bds_alpha3 = k[3] || 0;
+    extras.bds_beta0  = k[4] || 0; extras.bds_beta1  = k[5] || 0;
+    extras.bds_beta2  = k[6] || 0; extras.bds_beta3  = k[7] || 0;
+    // BDT-UTC from STO BDUT
+    const bdut = sysTimeData && sysTimeData.sto && sysTimeData.sto.BDUT;
+    extras.bds_utc_a0  = bdut && bdut.values ? bdut.values[1] : 0;
+    extras.bds_utc_a1  = bdut && bdut.values ? bdut.values[2] : 0;
+    extras.bds_utc_tot = bdut && bdut.values ? bdut.values[0] : 0;
+    extras.bds_dt_ls   = (sysTimeData && sysTimeData.leap && sysTimeData.leap.dt_ls) || 18;
+    // Per-PRN BeiDou almanac (bdsAlmanac, populated for clicked BeiDou sat)
+    for (let prn = 1; prn <= 30; prn++) {
+        const a = bdsAlmanac && bdsAlmanac[prn];
+        const pre = `bdsAlm${prn}_`;
+        if (a) {
+            extras[pre + 'e']         = a.e || 0;
+            extras[pre + 'sqrt_a']    = a.sqrt_a || 0;
+            extras[pre + 'omega0']    = (a.omega0_deg || 0) / 180;
+            extras[pre + 'omega']     = 0;
+            extras[pre + 'm0']        = (a.m0_deg || 0) / 180;
+            extras[pre + 'delta_i']   = ((a.inc_deg || 55) - 55) / 180;
+            extras[pre + 'omega_dot'] = -2.5e-9 / Math.PI;
+            extras[pre + 'toa']       = 0;
+            extras[pre + 'health']    = a.health || 0;
+            extras[pre + 'af0']       = 0;
+            extras[pre + 'af1']       = 0;
+        } else {
+            ['e','sqrt_a','omega0','omega','m0','delta_i','omega_dot','toa','health','af0','af1'].forEach(f => extras[pre + f] = 0);
+        }
+        extras['bds_h' + prn] = (a && a.health) || 0;
+    }
+    extras.bds_alm_toa = 0; extras.bds_alm_wn = 0;
+    extras.bds_amid = 0; extras.bds_amep = 0;
+    return extras;
+}
+
+function _bdsHdr(sf, page) {
+    return [
+        {start: 0,   len: 11, name: 'PREAMBLE',  fixed: 0x712, color: '#666'},
+        {start: 11,  len: 4,  name: 'reserved',  fixed: 0, color: '#444'},
+        {start: 15,  len: 3,  name: 'subframe ID', fixed: sf, color: '#fa6'},
+        {start: 18,  len: 8,  name: 'SOW MSB',   fromKey: 'sow_msb', color: '#88f'},
+        {start: 26,  len: 4,  name: 'parity',    fixed: 0, color: '#333', isParity: true},
+        {start: 30,  len: 12, name: 'SOW LSB',   fromKey: 'sow_lsb', color: '#88f'},
+        {start: 42,  len: 7,  name: 'Pnum',      fixed: page, color: '#f8c'},
+        {start: 49,  len: 3,  name: 'reserved',  fixed: 0, color: '#444'},
+        {start: 52,  len: 4,  name: 'parity',    fixed: 0, color: '#333', isParity: true},
+    ];
+}
+
+function beidouD1PageFields(sf, page) {
+    const hdr = _bdsHdr(sf, page);
+    if (sf === 4 && page >= 1 && page <= 24) return [...hdr, ..._bdsAlmFields(page, page)];
+    if (sf === 5 && page >= 1 && page <= 6)  return [...hdr, ..._bdsAlmFields(page + 24, page)];
+    if (sf === 5 && page === 9) {
+        // Klobuchar α/β block
+        return [...hdr,
+            {start: 56, len: 8,  name: 'α₀', fromKey: 'bds_alpha0', scale: Math.pow(2,30), signed: true, color: '#0fa'},
+            {start: 64, len: 8,  name: 'α₁', fromKey: 'bds_alpha1', scale: Math.pow(2,27), signed: true, color: '#0fa'},
+            {start: 72, len: 8,  name: 'α₂', fromKey: 'bds_alpha2', scale: Math.pow(2,24), signed: true, color: '#0fa'},
+            {start: 80, len: 4,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+            {start: 84, len: 8,  name: 'α₃', fromKey: 'bds_alpha3', scale: Math.pow(2,24), signed: true, color: '#0fa'},
+            {start: 92, len: 8,  name: 'β₀', fromKey: 'bds_beta0',  scale: 1/Math.pow(2,11), signed: true, color: '#0c8'},
+            {start: 100, len: 8, name: 'β₁', fromKey: 'bds_beta1',  scale: 1/Math.pow(2,14), signed: true, color: '#0c8'},
+            {start: 108, len: 4, name: 'parity', fixed: 0, color: '#333', isParity: true},
+            {start: 112, len: 8, name: 'β₂', fromKey: 'bds_beta2',  scale: 1/Math.pow(2,16), signed: true, color: '#0c8'},
+            {start: 120, len: 8, name: 'β₃', fromKey: 'bds_beta3',  scale: 1/Math.pow(2,16), signed: true, color: '#0c8'},
+            {start: 128, len: 172, name: 'reserved', fixed: 0, color: '#444'},
+        ];
+    }
+    if (sf === 5 && page === 10) {
+        // BDT-UTC params
+        return [...hdr,
+            {start: 56, len: 32, name: 'A₀ (BDT-UTC)', fromKey: 'bds_utc_a0', scale: Math.pow(2,30), signed: true, color: '#fc4'},
+            {start: 88, len: 24, name: 'A₁ (BDT-UTC)', fromKey: 'bds_utc_a1', scale: Math.pow(2,50), signed: true, color: '#fc4'},
+            {start: 112, len: 8,  name: 'ΔtLS',         fromKey: 'bds_dt_ls', signed: true, color: '#f55'},
+            {start: 120, len: 180, name: 'reserved',    fixed: 0, color: '#444'},
+        ];
+    }
+    if (sf === 5 && (page === 7 || page === 8)) {
+        // Health summary stubs
+        const fields = [...hdr];
+        let off = 56;
+        const start = page === 7 ? 1 : 20;
+        const end   = page === 7 ? 19 : 30;
+        for (let prn = start; prn <= end; prn++) {
+            if ((off + 9) > 300) break;
+            fields.push({start: off, len: 9, name: `Hea${prn}`, fromKey: `bds_h${prn}`, color: '#f55'});
+            off += 9;
+        }
+        fields.push({start: off, len: 300 - off, name: 'reserved', fixed: 0, color: '#444'});
+        return fields;
+    }
+    // Default: TLM/HOW/page-ID + reserved
+    return [...hdr,
+        {start: 56, len: 244, name: 'reserved', fixed: 0, color: '#444'},
+    ];
+}
+
+// BeiDou almanac fields per BDS-SIS-ICD-2.1 §5.2.4.18 (simplified, single page)
+function _bdsAlmFields(prn, pageDisp) {
+    const k = `bdsAlm${prn}_`;
+    return [
+        {start: 56,  len: 24, name: '√A',     fromKey: k+'sqrt_a',    scale: Math.pow(2,11), color: '#0f8'},
+        {start: 80,  len: 4,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        {start: 84,  len: 17, name: 'a₁',     fromKey: k+'af1',       scale: Math.pow(2,38), signed: true, color: '#fa6'},
+        {start: 101, len: 11, name: 'a₀',     fromKey: k+'af0',       scale: Math.pow(2,20), signed: true, color: '#fa6'},
+        {start: 112, len: 4,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        {start: 116, len: 24, name: 'Ω₀',     fromKey: k+'omega0',    scale: Math.pow(2,23), signed: true, color: '#0f8'},
+        {start: 140, len: 4,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        {start: 144, len: 17, name: 'e',      fromKey: k+'e',         scale: Math.pow(2,21), color: '#0f8'},
+        {start: 161, len: 11, name: 'δi',     fromKey: k+'delta_i',   scale: Math.pow(2,19), signed: true, color: '#fc4'},
+        {start: 172, len: 4,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        {start: 176, len: 16, name: 'toa',    fromKey: k+'toa',       scale: 1/4096, color: '#88f'},
+        {start: 192, len: 8,  name: 'Hea',    fromKey: k+'health',    color: '#f55'},
+        {start: 200, len: 4,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        {start: 204, len: 17, name: 'Ωdot',   fromKey: k+'omega_dot', scale: Math.pow(2,38), signed: true, color: '#fc4'},
+        {start: 221, len: 7,  name: 'reserved', fixed: 0, color: '#444'},
+        {start: 228, len: 4,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        {start: 232, len: 24, name: 'M₀',     fromKey: k+'m0',        scale: Math.pow(2,23), signed: true, color: '#0f8'},
+        {start: 256, len: 4,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        {start: 260, len: 24, name: 'ω',      fromKey: k+'omega',     scale: Math.pow(2,23), signed: true, color: '#0f8'},
+        {start: 284, len: 12, name: 'AmEpID', fromKey: 'bds_amep', color: '#cf6'},
+        {start: 296, len: 4,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+    ];
 }
 
 function beidouD1Fields(sf) {
@@ -3392,6 +3560,60 @@ function galileoInavFields(wt) {
     ];
 }
 
+// BeiDou: track current page so SF4/SF5 grids re-render in place when it advances
+let _lastBdsPage = null;
+function _maybeRerenderBdsPages() {
+    const newPage = currentBdsPage();
+    if (newPage === _lastBdsPage) return;
+    _lastBdsPage = newPage;
+    // For both SF4 (block index 3) and SF5 (block index 4), recompute fields
+    [3, 4].forEach(blockIdx => {
+        const block = document.getElementById(`bds-block-${blockIdx}`);
+        if (!block) return;
+        const sf = blockIdx + 1;
+        const fields = beidouD1PageFields(sf, newPage);
+        // Re-encode into local arrays
+        const bits = new Array(300).fill(0);
+        const labels = new Array(300).fill(null);
+        const vals = window._lastBdsVals || {};
+        for (const f of fields) {
+            let raw = 0;
+            if (f.fixed !== undefined) raw = f.fixed;
+            else if (f.fromKey !== undefined) {
+                const v = vals[f.fromKey];
+                if (v == null || isNaN(v)) raw = 0;
+                else if (f.scale) {
+                    let scaled = Math.round(v * f.scale);
+                    if (f.shift) scaled = Math.trunc(scaled / Math.pow(2, f.shift));
+                    raw = f.signed ? Number(_twos(scaled, f.len)) : (scaled & ((1 << Math.min(f.len, 30)) - 1));
+                } else raw = (typeof v === 'number')
+                    ? (f.signed ? Number(_twos(v, f.len)) : (v & ((1 << Math.min(f.len, 30)) - 1)))
+                    : 0;
+            }
+            _writeBits(bits, f.start, f.len, raw);
+            for (let k = 0; k < f.len; k++) labels[f.start + k] = { name: f.name, color: f.color, isParity: f.isParity };
+        }
+        // Patch DOM bit cells
+        const cells = block.querySelectorAll('.sf-bit');
+        cells.forEach((cell, bi) => {
+            if (bi >= 300) return;
+            const lbl = labels[bi] || { name: '?', color: '#222' };
+            cell.style.background = lbl.color;
+            cell.style.opacity = lbl.isParity ? '0.4' : '1';
+            cell.textContent = bits[bi];
+            cell.title = `${lbl.name} · bit ${bi}`;
+        });
+        // Update title
+        const title = block.querySelector('.sf-title');
+        if (title) {
+            const desc = sf === 4 ? bdsSf4PageDesc(newPage) : bdsSf5PageDesc(newPage);
+            const liveSpan = title.querySelector('.sf-live');
+            title.textContent = `Subframe ${sf} — Page ${newPage} (${desc}) `;
+            if (liveSpan) title.appendChild(liveSpan);
+        }
+    });
+}
+
 // Generic live ticker for the constellation broadcast-bits section.
 // Highlights the currently-broadcasting block based on its period.
 // Uses GPS-epoch-relative time + 18-second leap offset to match the existing
@@ -3409,6 +3631,7 @@ function startConstellationBitsTicker(sysKey, period, count) {
         const frameSec = tow % (period * count);
         const activeIdx = Math.floor(frameSec / period);
         const subSec = frameSec - activeIdx * period;
+        if (sysKey === 'bds') _maybeRerenderBdsPages();
         for (let i = 0; i < count; i++) {
             const block = document.getElementById(`${sysKey}-block-${i}`);
             const live  = document.getElementById(`${sysKey}-live-${i}`);
