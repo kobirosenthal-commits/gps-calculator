@@ -795,6 +795,30 @@ def ionosphere_data():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/gps-almanac', methods=['GET'])
+def gps_almanac():
+    """All 32 GPS SV slots from the loaded YUMA almanac."""
+    sats = almanac_data.get('satellites') or []
+    out = {}
+    for s in sats:
+        try:
+            out[s['id']] = {
+                'prn':       s['id'],
+                'health':    int(s.get('health', 0)),
+                'e':         float(s.get('e', 0.0)),
+                'sqrt_a':    float(s.get('sqA', 0.0)),
+                'inc_deg':   math.degrees(s.get('inc', 0.0)),
+                'omega_deg': math.degrees(s.get('w', 0.0)),
+                'omega0_deg': math.degrees(s.get('Om0', 0.0)),
+                'm0_deg':    math.degrees(s.get('M0', 0.0)),
+                'toa':       float(s.get('toa', 0.0)),
+                'gps_week':  int(s.get('wk', 0)),
+            }
+        except (KeyError, TypeError, ValueError):
+            continue
+    return jsonify({'slots': out, 'date': almanac_data.get('date')})
+
+
 _glo_almanac_cache = {'data': {}, 'ts': 0}
 
 @app.route('/api/glonass-almanac', methods=['GET'])
