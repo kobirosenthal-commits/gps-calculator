@@ -520,20 +520,20 @@ def parse_rinex4_combined(line_iter, progress=None):
     iono = {'klobuchar': None, 'nequick': None, 'bdgim': None}
 
     def _grab_iono(it, sys_letter, model):
-        # Read up to ~4 continuation lines after the > ION header until the next > marker
+        # ION blocks have exactly 2 continuation lines: an epoch line with the
+        # first 3 values, and a second line with remaining coefficients.
+        # BDGIM has 3 continuation lines (more coefficients).
         floats = []
         epoch = None
-        for _ in range(6):
+        n_lines = 3 if (sys_letter == 'C' and model == 'CNVX') else 2
+        for _ in range(n_lines):
             try:
-                pos = it.__next__()
+                pos = next(it)
             except StopIteration:
                 break
             if pos.startswith('> '):
-                # Push back is tricky with plain iterators; we just accept losing one
-                # marker line — the ION blocks are sparse so it's acceptable.
-                break
+                break  # safety: hit next record
             if epoch is None:
-                # First data line carries epoch yyyy mm dd hh mm ss + values
                 try:
                     parts = pos.replace('D', 'E').replace('d', 'e').split()
                     epoch = ' '.join(parts[:6])
@@ -555,15 +555,25 @@ def parse_rinex4_combined(line_iter, progress=None):
         if ln.startswith('> ION '):
             parts = ln.split()
             if len(parts) >= 4:
-                sys_letter, model_type = parts[2], parts[3]
+                sat_id = parts[2]
+                sys_letter = sat_id[0] if sat_id else '?'
+                model_type = parts[3]
                 rec = _grab_iono(it, sys_letter, model_type)
-                if rec['values']:
-                    if sys_letter == 'G' and len(rec['values']) >= 8:
+                rec['sat'] = sat_id
+                vals = rec['values']
+                # GPS LNAV → Klobuchar (8 coeffs); BeiDou D1D2 also Klobuchar-style
+                if sys_letter == 'G' and model_type == 'LNAV' and len(vals) >= 8:
+                    iono['klobuchar'] = rec
+                # Galileo IFNV/INAV/FNAV → NeQuick-G (≥3 coeffs)
+                elif sys_letter == 'E' and len(vals) >= 3:
+                    iono['nequick'] = rec
+                # BeiDou-3 CNVX → BDGIM (9 coeffs)
+                elif sys_letter == 'C' and model_type == 'CNVX' and len(vals) >= 9:
+                    iono['bdgim'] = rec
+                # BeiDou-2 D1D2 → Klobuchar variant; only use if no GPS Klobuchar yet
+                elif sys_letter == 'C' and model_type == 'D1D2' and len(vals) >= 8:
+                    if iono.get('klobuchar') is None:
                         iono['klobuchar'] = rec
-                    elif sys_letter == 'E' and len(rec['values']) >= 3:
-                        iono['nequick'] = rec
-                    elif sys_letter == 'C' and len(rec['values']) >= 9:
-                        iono['bdgim'] = rec
             continue
         if not ln.startswith('> EPH '):
             continue
