@@ -3196,9 +3196,9 @@ function renderConstellationBitsSection(spec) {
             const cellCount = endBit - startBit;
             const wlabel = wordsPerBlock === 1
                 ? `${spec.wordPrefix}1`
-                : (spec.wordPrefix === '' || spec.wordPrefix === 'L'
-                    ? `${startBit + 1}-${endBit}`
-                    : `${spec.wordPrefix}${w + 1}`);
+                : (spec.wordPrefix === 'W'
+                    ? `W${w + 1}`                       // GPS / BeiDou: 30-bit words named W1..W10
+                    : `${startBit + 1}-${endBit}`);     // GLONASS / Galileo: bit range
             html += `<div class="sf-word"><div class="sf-wnum">${wlabel}</div><div class="sf-word-cells" style="grid-template-columns:repeat(${cellCount}, minmax(0, 1fr))">`;
             for (let bi = startBit; bi < endBit; bi++) {
                 const lbl = labels[bi] || { name: '?', color: '#222' };
