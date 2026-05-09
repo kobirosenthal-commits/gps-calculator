@@ -1138,6 +1138,8 @@ let dataFreshness = {};
 let sysTimeData = {sto: {}, eop: null};
 let gloAlmanac = {};
 let gpsAlmanac = {};
+let bdsAlmanac = {};
+let galAlmanac = {};
 
 function fmtAgo(epochSec) {
     if (!epochSec) return 'unknown';
@@ -1624,31 +1626,39 @@ function buildSatDetailHtml(data, sat, rangeKm, elev, az) {
     html += renderSysTimeSection(sat.constellation);
     html += renderEopSection(sat.constellation);
     html += renderGlonassAlmanacSection(sat);
-    html += renderGpsAlmanacSection(sat);
+    html += renderKeplerAlmanacSection(sat);
     return html;
 }
 
-function renderGpsAlmanacSection(sat) {
-    if (sat.constellation !== 'GPS') return '';
-    if (!gpsAlmanac || !Object.keys(gpsAlmanac).length) return '';
+function renderKeplerAlmanacSection(sat) {
+    const cfg = {
+        GPS:     { prefix: 'G', max: 32, title: 'ALL 32 SVs',  data: () => gpsAlmanac },
+        BEIDOU:  { prefix: 'C', max: 63, title: 'ALL 63 SLOTS', data: () => bdsAlmanac },
+        GALILEO: { prefix: 'E', max: 36, title: 'ALL 36 SLOTS', data: () => galAlmanac },
+    }[sat.constellation];
+    if (!cfg) return '';
+    const data = cfg.data();
+    if (!data || !Object.keys(data).length) return '';
     const ownPrn = parseInt(sat.label.slice(1), 10);
-    let body = '<div class="sd-section" style="grid-column:1/-1"><h4>CONSTELLATION ALMANAC — ALL 32 SVs</h4>';
+    let body = `<div class="sd-section" style="grid-column:1/-1"><h4>CONSTELLATION ALMANAC — ${cfg.title}</h4>`;
     body += '<div class="glo-alm-grid">';
-    for (let p = 1; p <= 32; p++) {
-        const rec = gpsAlmanac[p];
+    for (let p = 1; p <= cfg.max; p++) {
+        const rec = data[p];
         const isOwn = p === ownPrn;
         if (!rec) {
-            body += `<div class="glo-alm-cell empty${isOwn ? ' own' : ''}"><div class="glo-alm-slot">G${String(p).padStart(2,'0')}</div><div class="glo-alm-empty">no data</div></div>`;
+            body += `<div class="glo-alm-cell empty${isOwn ? ' own' : ''}"><div class="glo-alm-slot">${cfg.prefix}${String(p).padStart(2,'0')}</div><div class="glo-alm-empty">no data</div></div>`;
             continue;
         }
         const healthy = rec.health === 0;
         body += `<div class="glo-alm-cell ${healthy ? 'healthy' : 'unhealthy'}${isOwn ? ' own' : ''}">`;
-        body += `<div class="glo-alm-slot">G${String(p).padStart(2,'0')}</div>`;
+        body += `<div class="glo-alm-slot">${cfg.prefix}${String(p).padStart(2,'0')}</div>`;
         body += `<div class="glo-alm-row"><span>health</span><span>${rec.health === 0 ? 'OK' : '0x' + rec.health.toString(16)}</span></div>`;
         body += `<div class="glo-alm-row"><span>e</span><span>${rec.e.toExponential(2)}</span></div>`;
         body += `<div class="glo-alm-row"><span>√a</span><span>${rec.sqrt_a.toFixed(0)}</span></div>`;
         body += `<div class="glo-alm-row"><span>inc</span><span>${rec.inc_deg.toFixed(2)}°</span></div>`;
         body += `<div class="glo-alm-row"><span>Ω₀</span><span>${rec.omega0_deg.toFixed(1)}°</span></div>`;
+        if (rec.msg_type) body += `<div class="glo-alm-row"><span>msg</span><span>${rec.msg_type}</span></div>`;
+        if (typeof rec.sisa === 'number' && rec.sisa) body += `<div class="glo-alm-row"><span>SISA</span><span>${rec.sisa.toFixed(1)} m</span></div>`;
         body += '</div>';
     }
     body += '</div></div>';
@@ -1911,10 +1921,14 @@ function loadSpContent(sat) {
         fetch('/api/ionosphere').then(r => r.json()).catch(() => ({iono:{}})),
         fetch('/api/system-time').then(r => r.json()).catch(() => ({sto:{}, eop:null}))
     ];
-    if (sat.constellation === 'GLONASS') {
-        extraFetches.push(fetch('/api/glonass-almanac').then(r => r.json()).catch(() => ({slots:{}})));
-    } else if (sat.constellation === 'GPS') {
-        extraFetches.push(fetch('/api/gps-almanac').then(r => r.json()).catch(() => ({slots:{}})));
+    const almanacUrl = {
+        GLONASS: '/api/glonass-almanac',
+        GPS:     '/api/gps-almanac',
+        BEIDOU:  '/api/beidou-almanac',
+        GALILEO: '/api/galileo-almanac',
+    }[sat.constellation];
+    if (almanacUrl) {
+        extraFetches.push(fetch(almanacUrl).then(r => r.json()).catch(() => ({slots:{}})));
     }
     Promise.all(extraFetches)
         .then(results => {
@@ -1924,8 +1938,11 @@ function loadSpContent(sat) {
             ionoData = (iono && iono.iono) || ionoData || {};
             sysTimeData = systime || {sto:{}, eop:null};
             const extraAlm = results[4];
-            if (sat.constellation === 'GLONASS') gloAlmanac = (extraAlm && extraAlm.slots) || gloAlmanac || {};
-            else if (sat.constellation === 'GPS') gpsAlmanac = (extraAlm && extraAlm.slots) || gpsAlmanac || {};
+            const slots = (extraAlm && extraAlm.slots) || {};
+            if      (sat.constellation === 'GLONASS') gloAlmanac = Object.keys(slots).length ? slots : gloAlmanac;
+            else if (sat.constellation === 'GPS')     gpsAlmanac = Object.keys(slots).length ? slots : gpsAlmanac;
+            else if (sat.constellation === 'BEIDOU')  bdsAlmanac = Object.keys(slots).length ? slots : bdsAlmanac;
+            else if (sat.constellation === 'GALILEO') galAlmanac = Object.keys(slots).length ? slots : galAlmanac;
             content.innerHTML = buildFreshnessBanner(sat.constellation) + buildSatDetailHtml(data, sat, rangeKm, elev, az);
             detailRefreshTimer = setInterval(() => {
                 const el = document.getElementById('sd-sf-display');

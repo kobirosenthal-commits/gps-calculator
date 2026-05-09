@@ -819,6 +819,58 @@ def gps_almanac():
     return jsonify({'slots': out, 'date': almanac_data.get('date')})
 
 
+@app.route('/api/beidou-almanac', methods=['GET'])
+def beidou_almanac():
+    """Per-PRN almanac-style summary derived from the loaded D1/D2 ephemeris."""
+    out = {}
+    eph = (bei_d_data.get('ephemeris') or {})
+    for prn, d in eph.items():
+        try:
+            out[int(prn)] = {
+                'prn':        int(prn),
+                'health':     int(d.get('sat_h1', 0)),
+                'e':          float(d['e']),
+                'sqrt_a':     float(d['sqrt_a']),
+                'inc_deg':    math.degrees(d['i0']),
+                'omega0_deg': math.degrees(d['omega0']),
+                'm0_deg':     math.degrees(d['m0']),
+                'msg_type':   d.get('msg_type', '?'),
+                'bdt_week':   int(d.get('bdt_week', 0)),
+            }
+        except (KeyError, TypeError, ValueError):
+            continue
+    return jsonify({'slots': out, 'date': bei_d_data.get('date')})
+
+
+@app.route('/api/galileo-almanac', methods=['GET'])
+def galileo_almanac():
+    """Per-PRN almanac-style summary from Galileo I/NAV (falls back to F/NAV)."""
+    out = {}
+    primary = (gal_inav_data.get('ephemeris') or {})
+    secondary = (gal_fnav_data.get('ephemeris') or {})
+    all_prns = set(int(p) for p in primary) | set(int(p) for p in secondary)
+    for prn in all_prns:
+        d = primary.get(prn) or primary.get(str(prn)) or secondary.get(prn) or secondary.get(str(prn))
+        if not d:
+            continue
+        try:
+            out[prn] = {
+                'prn':        prn,
+                'health':     int(d.get('sv_health', 0)),
+                'e':          float(d['e']),
+                'sqrt_a':     float(d['sqrt_a']),
+                'inc_deg':    math.degrees(d['i0']),
+                'omega0_deg': math.degrees(d['omega0']),
+                'm0_deg':     math.degrees(d['m0']),
+                'sisa':       float(d.get('sisa', 0.0)),
+                'gal_week':   int(d.get('gal_week', 0)),
+            }
+        except (KeyError, TypeError, ValueError):
+            continue
+    return jsonify({'slots': out,
+                    'date': gal_inav_data.get('date') or gal_fnav_data.get('date')})
+
+
 _glo_almanac_cache = {'data': {}, 'ts': 0}
 
 @app.route('/api/glonass-almanac', methods=['GET'])
