@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, jsonify
 from datetime import datetime, timedelta, timezone
 from gps_core import (fetch_almanac, parse_yuma, propagate, geodetic, gps_time_from_datetime,
                       fetch_tle_group, parse_tles, propagate_tle, fetch_glonass_slot_map,
+                      fetch_glonass_constellation_status,
                       fetch_gps_rinex, parse_rinex2_nav,
                       fetch_gps_rinex4, parse_rinex4_nav, parse_rinex4_beidou,
                       parse_rinex4_galileo, parse_rinex4_combined, _rinex4_line_iter,
@@ -792,6 +793,23 @@ def ionosphere_data():
                         'date': None, 'mtime': None}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+_glo_almanac_cache = {'data': {}, 'ts': 0}
+
+@app.route('/api/glonass-almanac', methods=['GET'])
+def glonass_almanac():
+    """Full GLONASS constellation status (all 24 slots) — IAC source, cached
+    for 30 minutes to avoid hammering glonass-iac.ru."""
+    import time as _t
+    if _t.time() - _glo_almanac_cache['ts'] > 1800 or not _glo_almanac_cache['data']:
+        try:
+            _glo_almanac_cache['data'] = fetch_glonass_constellation_status()
+            _glo_almanac_cache['ts'] = _t.time()
+        except Exception as e:
+            return jsonify({'error': str(e), 'slots': {}}), 200
+    return jsonify({'slots': _glo_almanac_cache['data'],
+                    'fetched_ts': int(_glo_almanac_cache['ts'])})
 
 
 @app.route('/api/system-time', methods=['GET'])

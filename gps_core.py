@@ -365,6 +365,52 @@ def fetch_tle_group(group):
     return _fetch_tle_satnogs(group)
 
 
+def fetch_glonass_constellation_status():
+    """Returns full almanac-style status for the GLONASS constellation:
+    {slot: {norad, channel, health, block, launch_date, in_op, raw}} for slots 1-24.
+    Each slot may also be missing if no satellite occupies it."""
+    url = 'https://glonass-iac.ru/glonass/sostavOG/sostavOG_json.php?lang=en&sort=point'
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    out = {}
+    try:
+        r = requests.get(url, timeout=15, verify=False, headers=headers)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        log.warning(f"GLONASS constellation status fetch failed: {type(e).__name__}: {e}")
+        return out
+    for rec in data:
+        group = rec.get('name', '')  # 'OG' = operational, 'TC' = test commissioning, etc.
+        for sat in rec.get('data', []):
+            point = str(sat.get('point', '')).strip()
+            if not point.isdigit():
+                continue
+            n = int(point)
+            if not (1 <= n <= 24):
+                continue
+            try:
+                norad = int(sat['NORAD'])
+            except (KeyError, ValueError, TypeError):
+                norad = None
+            channel = sat.get('slot') or sat.get('frequency')
+            try:
+                channel = int(channel) if channel not in (None, '') else None
+            except (ValueError, TypeError):
+                channel = None
+            out[n] = {
+                'slot':       n,
+                'norad':      norad,
+                'channel':    channel,
+                'health':     sat.get('status', '') or sat.get('Health', ''),
+                'block':      sat.get('plane', '') or sat.get('block', ''),
+                'launched':   sat.get('start_date', '') or sat.get('launch_date', ''),
+                'in_op_use':  sat.get('use', '') or sat.get('inUse', ''),
+                'group':      group,
+            }
+    log.info(f"GLONASS constellation: {len(out)}/24 slots populated")
+    return out
+
+
 def fetch_glonass_slot_map():
     """Fetch {NORAD: slot} mapping for operational GLONASS sats from the Russian IAC.
        Slot is the orbital point number that Trimble and receivers display as R01-R24."""

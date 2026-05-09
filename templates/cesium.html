@@ -232,6 +232,17 @@
         .iono-legend-labels { display: flex; justify-content: space-between; font-size: 0.72em; color: #aacde0; margin-top: 2px; }
         .iono-legend-cap { font-size: 0.72em; color: #5599cc; text-align: center; margin-top: 2px; }
         .iono-hint { font-size: 0.72em; color: #5599cc; margin-top: 8px; line-height: 1.4; }
+        .glo-alm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 4px; margin-top: 4px; }
+        .glo-alm-cell { background: rgba(0,20,50,0.55); border: 1px solid #1a3a5c; border-radius: 4px; padding: 6px 8px; font-size: 0.72em; }
+        .glo-alm-cell.healthy { border-left: 3px solid #00ff88; }
+        .glo-alm-cell.unhealthy { border-left: 3px solid #ff5555; }
+        .glo-alm-cell.empty { opacity: 0.45; border-left: 3px solid #555; }
+        .glo-alm-cell.own { background: rgba(126,207,255,0.12); border-color: #7ecfff; }
+        .glo-alm-slot { color: #7ecfff; font-weight: 700; font-size: 0.95em; margin-bottom: 3px; }
+        .glo-alm-row { display: flex; justify-content: space-between; gap: 6px; line-height: 1.3; }
+        .glo-alm-row > span:first-child { color: #4477aa; }
+        .glo-alm-row > span:last-child { color: #e0f0ff; }
+        .glo-alm-empty { color: #886; font-style: italic; font-size: 0.85em; }
         .sd-pending { color: #3a6a9a; font-size: 0.82em; padding: 10px 0 4px; display: flex; align-items: center; gap: 8px; }
         .sd-pending::before { content: ''; display: inline-block; width: 10px; height: 10px; border: 2px solid #1a3a5c; border-top-color: #5599cc; border-radius: 50%; animation: spin 1.2s linear infinite; flex-shrink: 0; }
 
@@ -1125,6 +1136,7 @@ let skyPlotSats = [];
 let detailRefreshTimer = null;
 let dataFreshness = {};
 let sysTimeData = {sto: {}, eop: null};
+let gloAlmanac = {};
 
 function fmtAgo(epochSec) {
     if (!epochSec) return 'unknown';
@@ -1575,7 +1587,42 @@ function buildSatDetailHtml(data, sat, rangeKm, elev, az) {
     html += renderIonoSection(sat.constellation);
     html += renderSysTimeSection(sat.constellation);
     html += renderEopSection(sat.constellation);
+    html += renderGlonassAlmanacSection(sat);
     return html;
+}
+
+function renderGlonassAlmanacSection(sat) {
+    if (sat.constellation !== 'GLONASS') return '';
+    if (!gloAlmanac || !Object.keys(gloAlmanac).length) {
+        return '<div class="sd-section" style="grid-column:1/-1"><h4>CONSTELLATION ALMANAC — ALL 24 SLOTS</h4>'
+            + '<div class="sd-row"><span class="sd-lbl">status</span><span class="sd-val" style="color:#886">no data (IAC fetch pending or unreachable)</span></div></div>';
+    }
+    const ownSlot = parseInt(sat.label.slice(1), 10);
+    let body = '<div class="sd-section" style="grid-column:1/-1"><h4>CONSTELLATION ALMANAC — ALL 24 SLOTS</h4>';
+    body += '<div class="glo-alm-grid">';
+    for (let s = 1; s <= 24; s++) {
+        const rec = gloAlmanac[s];
+        const isOwn = s === ownSlot;
+        if (!rec) {
+            body += `<div class="glo-alm-cell empty${isOwn ? ' own' : ''}"><div class="glo-alm-slot">R${String(s).padStart(2,'0')}</div><div class="glo-alm-empty">vacant</div></div>`;
+            continue;
+        }
+        const healthy = !/un|fail|inop|out|maint/i.test(rec.health || '');
+        const ch = (rec.channel === null || rec.channel === undefined) ? '—' : (rec.channel >= 0 ? '+' + rec.channel : rec.channel);
+        // L1 frequency = 1602 MHz + k * 0.5625 MHz, L2 = 1246 MHz + k * 0.4375 MHz (FDMA)
+        const f1 = (typeof rec.channel === 'number') ? (1602.0 + rec.channel * 0.5625).toFixed(4) : '—';
+        const f2 = (typeof rec.channel === 'number') ? (1246.0 + rec.channel * 0.4375).toFixed(4) : '—';
+        body += `<div class="glo-alm-cell ${healthy ? 'healthy' : 'unhealthy'}${isOwn ? ' own' : ''}">`;
+        body += `<div class="glo-alm-slot">R${String(s).padStart(2,'0')}</div>`;
+        body += `<div class="glo-alm-row"><span>k</span><span>${ch}</span></div>`;
+        body += `<div class="glo-alm-row"><span>L1</span><span>${f1}</span></div>`;
+        body += `<div class="glo-alm-row"><span>L2</span><span>${f2}</span></div>`;
+        if (rec.norad) body += `<div class="glo-alm-row"><span>NORAD</span><span>${rec.norad}</span></div>`;
+        if (rec.health) body += `<div class="glo-alm-row" title="${rec.health}"><span>state</span><span>${(rec.health || '').slice(0, 14)}</span></div>`;
+        body += '</div>';
+    }
+    body += '</div></div>';
+    return body;
 }
 
 // Map of which STO codes to highlight per constellation
@@ -1777,16 +1824,23 @@ function loadSpContent(sat) {
         rangeKm = ae.range; elev = ae.elev; az = ae.az;
     }
 
-    Promise.all([
+    const extraFetches = [
         fetch(`/api/satellite-detail?label=${encodeURIComponent(label)}&constellation=${sat.constellation}`).then(r => r.json()),
         fetch('/api/data-freshness').then(r => r.json()).catch(() => ({})),
         fetch('/api/ionosphere').then(r => r.json()).catch(() => ({iono:{}})),
         fetch('/api/system-time').then(r => r.json()).catch(() => ({sto:{}, eop:null}))
-    ])
-        .then(([data, fresh, iono, systime]) => {
+    ];
+    if (sat.constellation === 'GLONASS') {
+        extraFetches.push(fetch('/api/glonass-almanac').then(r => r.json()).catch(() => ({slots:{}})));
+    }
+    Promise.all(extraFetches)
+        .then(results => {
+            const [data, fresh, iono, systime] = results;
+            const gloAlm = results[4];
             dataFreshness = fresh || {};
             ionoData = (iono && iono.iono) || ionoData || {};
             sysTimeData = systime || {sto:{}, eop:null};
+            gloAlmanac = (gloAlm && gloAlm.slots) || gloAlmanac || {};
             content.innerHTML = buildFreshnessBanner(sat.constellation) + buildSatDetailHtml(data, sat, rangeKm, elev, az);
             detailRefreshTimer = setInterval(() => {
                 const el = document.getElementById('sd-sf-display');
