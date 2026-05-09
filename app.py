@@ -481,6 +481,16 @@ def satellite_detail():
                 'crc':       eph['crc'],
                 'cic':       eph['cic'],
                 'cis':       eph['cis'],
+                # Raw values for bit-level subframe reconstruction
+                'af0_raw':   eph['af0'],
+                'af1_raw':   eph['af1'],
+                'm0_rad':    eph['m0'],
+                'omega0_rad': eph['omega0'],
+                'omega_rad': eph['omega'],
+                'i0_rad':    eph['i0'],
+                'omega_dot_rad': eph['omega_dot'],
+                'idot_rad':  eph['idot'],
+                'delta_n_rad': eph['delta_n'],
                 'rinex_date': rinex_data['date'],
             }
         cnav = rinex4_data['ephemeris'].get(prn)

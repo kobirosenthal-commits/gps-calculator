@@ -283,6 +283,25 @@
         .glo-alm-row > span:first-child { color: #4477aa; }
         .glo-alm-row > span:last-child { color: #e0f0ff; }
         .glo-alm-empty { color: #886; font-style: italic; font-size: 0.85em; }
+        .sf-hint { font-size: 0.72em; color: #5599cc; margin-bottom: 10px; line-height: 1.45; }
+        .sf-block { margin-bottom: 14px; }
+        .sf-title { font-size: 0.78em; color: #7ecfff; letter-spacing: 0.8px; margin-bottom: 4px; font-weight: 600; }
+        .sf-grid { display: flex; flex-direction: column; gap: 1px; background: rgba(0,20,50,0.55); border: 1px solid #1a3a5c; border-radius: 4px; padding: 4px; overflow-x: auto; }
+        .sf-word { display: flex; gap: 1px; align-items: center; }
+        .sf-wnum { font-size: 0.65em; color: #5599cc; min-width: 26px; padding: 0 4px; font-family: monospace; }
+        .sf-bit {
+            display: inline-block; width: 16px; height: 16px; min-width: 16px;
+            font-size: 0.6em; font-family: monospace; color: rgba(0,0,0,0.7);
+            text-align: center; line-height: 16px; font-weight: 700;
+            border-radius: 2px; cursor: help;
+        }
+        .sf-legend { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 4px; font-size: 0.66em; color: #aac; }
+        .sf-leg-item { display: inline-flex; align-items: center; gap: 3px; }
+        .sf-leg-sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+        @media (max-width: 1000px) {
+            .sf-bit { width: 14px; height: 14px; min-width: 14px; line-height: 14px; font-size: 0.55em; }
+            .sf-wnum { min-width: 22px; }
+        }
         .sd-pending { color: #3a6a9a; font-size: 0.82em; padding: 10px 0 4px; display: flex; align-items: center; gap: 8px; }
         .sd-pending::before { content: ''; display: inline-block; width: 10px; height: 10px; border: 2px solid #1a3a5c; border-top-color: #5599cc; border-radius: 50%; animation: spin 1.2s linear infinite; flex-shrink: 0; }
 
@@ -1354,6 +1373,7 @@ function buildSatDetailHtml(data, sat, rangeKm, elev, az) {
         html += sdRow('Cis',             e.cis.toExponential(3) + ' rad');
         html += sdRow('Source',          'RINEX ' + e.rinex_date);
         html += '</div>';
+        html += renderLnavSubframes(e);
     } else if (sat.constellation === 'GPS') {
         html += '<div class="sd-section" id="sd-lnav"><h4>BROADCAST EPHEMERIS — LNAV</h4>' +
             '<div class="sd-pending">RINEX data loading from NOAA — auto-refreshing…</div></div>';
@@ -2326,6 +2346,273 @@ setInterval(() => {
     Object.keys(_tleLoaded).forEach(k => _tleLoaded[k] = false);
     bootstrapTLEs();
 }, 6 * 3600 * 1000);
+
+// ── GPS LNAV subframe bit decoder (educational visualization) ────────
+// Reconstructs the 300-bit subframes 1/2/3 per IS-GPS-200 from parsed
+// ephemeris. Parity bits aren't recomputed (zeroed) since this is
+// purely visual.
+
+// Encode signed integer in N bits (two's complement). Returns 0..2^N-1.
+function _twos(value, bits) {
+    if (bits >= 31) {
+        // Use BigInt for >=31-bit fields to avoid sign-extension issues
+        const max = 1n << BigInt(bits);
+        let v = BigInt(Math.trunc(value));
+        if (v < 0n) v = max + v;
+        return v & (max - 1n);
+    }
+    const max = 1 << bits;
+    if (value < 0) value = (max + value) | 0;
+    return value & (max - 1);
+}
+
+function _writeBits(bits, startBit, len, packedValue) {
+    for (let i = 0; i < len; i++) {
+        let v;
+        if (typeof packedValue === 'bigint') {
+            v = Number((packedValue >> BigInt(len - 1 - i)) & 1n);
+        } else {
+            v = (packedValue >> (len - 1 - i)) & 1;
+        }
+        bits[startBit + i] = v;
+    }
+}
+
+// LNAV subframe field maps. Each entry packs a value at [startBit, startBit+len).
+// startBit is 0-indexed from start of subframe; subframe is 300 bits = 10 words × 30.
+// Word k uses bits 30k..30k+23 for data, 30k+24..30k+29 for parity.
+const LNAV_FIELDS = {
+    1: [
+        // Word 1: TLM
+        {start: 0,   len: 8,  name: 'PREAMBLE',     fixed: 0x8B,  color: '#666'},
+        {start: 8,   len: 14, name: 'TLM message',  fixed: 0,     color: '#888'},
+        {start: 22,  len: 2,  name: 'reserved',     fixed: 0,     color: '#444'},
+        {start: 24,  len: 6,  name: 'parity',       fixed: 0,     color: '#333', isParity: true},
+        // Word 2: HOW
+        {start: 30,  len: 17, name: 'TOW count',    fromKey: 'tow17',                color: '#88f'},
+        {start: 47,  len: 1,  name: 'alert',        fixed: 0,                        color: '#666'},
+        {start: 48,  len: 1,  name: 'A-S flag',     fromKey: 'l2_p_flag', mask: 1,   color: '#888'},
+        {start: 49,  len: 3,  name: 'subframe ID',  fixed: 1,                        color: '#fa6'},
+        {start: 52,  len: 2,  name: 'reserved',     fixed: 0,                        color: '#444'},
+        {start: 54,  len: 6,  name: 'parity',       fixed: 0,                        color: '#333', isParity: true},
+        // Word 3
+        {start: 60,  len: 10, name: 'WN',           fromKey: 'gps_week', mask: 0x3FF, color: '#0f8'},
+        {start: 70,  len: 2,  name: 'L2 codes',     fromKey: 'l2_codes',              color: '#cf6'},
+        {start: 72,  len: 4,  name: 'URA index',    fromKey: 'ura',                   color: '#fa6'},
+        {start: 76,  len: 6,  name: 'SV health',    fromKey: 'health_eph',            color: '#f55'},
+        {start: 82,  len: 2,  name: 'IODC MSB',     fromKey: 'iodc', shift: 8,        color: '#f8c'},
+        {start: 84,  len: 6,  name: 'parity',       fixed: 0,                        color: '#333', isParity: true},
+        // Word 4
+        {start: 90,  len: 1,  name: 'L2P data',     fromKey: 'l2_p_flag',             color: '#cf6'},
+        {start: 91,  len: 23, name: 'reserved',     fixed: 0,                         color: '#444'},
+        {start: 114, len: 6,  name: 'parity',       fixed: 0,                         color: '#333', isParity: true},
+        // Words 5, 6: reserved
+        {start: 120, len: 24, name: 'reserved',     fixed: 0,                         color: '#444'},
+        {start: 144, len: 6,  name: 'parity',       fixed: 0,                         color: '#333', isParity: true},
+        {start: 150, len: 24, name: 'reserved',     fixed: 0,                         color: '#444'},
+        {start: 174, len: 6,  name: 'parity',       fixed: 0,                         color: '#333', isParity: true},
+        // Word 7
+        {start: 180, len: 16, name: 'reserved',     fixed: 0,                         color: '#444'},
+        {start: 196, len: 8,  name: 'TGD',          fromKey: 'tgd',  scale: Math.pow(2,31), signed: true, color: '#fc4'},
+        {start: 204, len: 6,  name: 'parity',       fixed: 0,                         color: '#333', isParity: true},
+        // Word 8
+        {start: 210, len: 8,  name: 'IODC LSB',     fromKey: 'iodc', mask: 0xFF,      color: '#f8c'},
+        {start: 218, len: 16, name: 'toc',          fromKey: 'toc_sec', scale: 1/16,  color: '#88f'},
+        {start: 234, len: 6,  name: 'parity',       fixed: 0,                         color: '#333', isParity: true},
+        // Word 9
+        {start: 240, len: 8,  name: 'af2',          fromKey: 'af2', scale: Math.pow(2,55), signed: true, color: '#fa6'},
+        {start: 248, len: 16, name: 'af1',          fromKey: 'af1_raw', scale: Math.pow(2,43), signed: true, color: '#fa6'},
+        {start: 264, len: 6,  name: 'parity',       fixed: 0,                         color: '#333', isParity: true},
+        // Word 10
+        {start: 270, len: 22, name: 'af0',          fromKey: 'af0_raw', scale: Math.pow(2,31), signed: true, color: '#fa6'},
+        {start: 292, len: 2,  name: 'reserved',     fixed: 0,                         color: '#444'},
+        {start: 294, len: 6,  name: 'parity',       fixed: 0,                         color: '#333', isParity: true},
+    ],
+    2: [
+        // Words 1+2 same TLM/HOW pattern
+        {start: 0,   len: 8,  name: 'PREAMBLE', fixed: 0x8B, color: '#666'},
+        {start: 8,   len: 22, name: 'TLM/parity', fixed: 0, color: '#888'},
+        {start: 30,  len: 17, name: 'TOW count', fromKey: 'tow17', color: '#88f'},
+        {start: 47,  len: 2,  name: 'flags', fixed: 0, color: '#666'},
+        {start: 49,  len: 3,  name: 'subframe ID', fixed: 2, color: '#fa6'},
+        {start: 52,  len: 8,  name: 'parity+pad', fixed: 0, color: '#333', isParity: true},
+        // Word 3: IODE (8) + Crs (16)
+        {start: 60,  len: 8,  name: 'IODE', fromKey: 'iode', color: '#f8c'},
+        {start: 68,  len: 16, name: 'Crs',  fromKey: 'crs', scale: 32, signed: true, color: '#fc4'},
+        {start: 84,  len: 6,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        // Word 4: Δn (16) + M0 MSB (8)
+        {start: 90,  len: 16, name: 'Δn', fromKey: 'delta_n_semi', scale: Math.pow(2,43), signed: true, color: '#fc4'},
+        {start: 106, len: 8,  name: 'M₀ MSB', fromKey: 'm0_semi', scale: Math.pow(2,31), signed: true, shift: 24, color: '#0f8'},
+        {start: 114, len: 6,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        // Word 5: M0 LSB (24)
+        {start: 120, len: 24, name: 'M₀ LSB', fromKey: 'm0_semi', scale: Math.pow(2,31), signed: true, mask: 0xFFFFFF, color: '#0f8'},
+        {start: 144, len: 6,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        // Word 6: Cuc (16) + e MSB (8)
+        {start: 150, len: 16, name: 'Cuc', fromKey: 'cuc', scale: Math.pow(2,29), signed: true, color: '#fc4'},
+        {start: 166, len: 8,  name: 'e MSB', fromKey: 'e_eph', scale: Math.pow(2,33), shift: 24, color: '#0f8'},
+        {start: 174, len: 6,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        // Word 7: e LSB (24)
+        {start: 180, len: 24, name: 'e LSB', fromKey: 'e_eph', scale: Math.pow(2,33), mask: 0xFFFFFF, color: '#0f8'},
+        {start: 204, len: 6,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        // Word 8: Cus (16) + √A MSB (8)
+        {start: 210, len: 16, name: 'Cus', fromKey: 'cus', scale: Math.pow(2,29), signed: true, color: '#fc4'},
+        {start: 226, len: 8,  name: '√A MSB', fromKey: 'sqrt_a_eph', scale: Math.pow(2,19), shift: 24, color: '#0f8'},
+        {start: 234, len: 6,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        // Word 9: √A LSB (24)
+        {start: 240, len: 24, name: '√A LSB', fromKey: 'sqrt_a_eph', scale: Math.pow(2,19), mask: 0xFFFFFF, color: '#0f8'},
+        {start: 264, len: 6,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        // Word 10: toe (16) + fit (1) + AODO (5) + reserved (2)
+        {start: 270, len: 16, name: 'toe', fromKey: 'toe', scale: 1/16, color: '#88f'},
+        {start: 286, len: 1,  name: 'fit interval', fromKey: 'fit_interval', color: '#cf6'},
+        {start: 287, len: 5,  name: 'AODO', fixed: 0, color: '#444'},
+        {start: 292, len: 2,  name: 'reserved', fixed: 0, color: '#444'},
+        {start: 294, len: 6,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+    ],
+    3: [
+        {start: 0,   len: 8,  name: 'PREAMBLE', fixed: 0x8B, color: '#666'},
+        {start: 8,   len: 22, name: 'TLM/parity', fixed: 0, color: '#888'},
+        {start: 30,  len: 17, name: 'TOW count', fromKey: 'tow17', color: '#88f'},
+        {start: 47,  len: 2,  name: 'flags', fixed: 0, color: '#666'},
+        {start: 49,  len: 3,  name: 'subframe ID', fixed: 3, color: '#fa6'},
+        {start: 52,  len: 8,  name: 'parity+pad', fixed: 0, color: '#333', isParity: true},
+        // Word 3: Cic (16) + Ω0 MSB (8)
+        {start: 60,  len: 16, name: 'Cic', fromKey: 'cic', scale: Math.pow(2,29), signed: true, color: '#fc4'},
+        {start: 76,  len: 8,  name: 'Ω₀ MSB', fromKey: 'omega0_semi', scale: Math.pow(2,31), signed: true, shift: 24, color: '#0f8'},
+        {start: 84,  len: 6,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        // Word 4: Ω0 LSB (24)
+        {start: 90,  len: 24, name: 'Ω₀ LSB', fromKey: 'omega0_semi', scale: Math.pow(2,31), signed: true, mask: 0xFFFFFF, color: '#0f8'},
+        {start: 114, len: 6,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        // Word 5: Cis (16) + i0 MSB (8)
+        {start: 120, len: 16, name: 'Cis', fromKey: 'cis', scale: Math.pow(2,29), signed: true, color: '#fc4'},
+        {start: 136, len: 8,  name: 'i₀ MSB', fromKey: 'i0_semi', scale: Math.pow(2,31), signed: true, shift: 24, color: '#0f8'},
+        {start: 144, len: 6,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        // Word 6: i0 LSB (24)
+        {start: 150, len: 24, name: 'i₀ LSB', fromKey: 'i0_semi', scale: Math.pow(2,31), signed: true, mask: 0xFFFFFF, color: '#0f8'},
+        {start: 174, len: 6,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        // Word 7: Crc (16) + ω MSB (8)
+        {start: 180, len: 16, name: 'Crc', fromKey: 'crc', scale: 32, signed: true, color: '#fc4'},
+        {start: 196, len: 8,  name: 'ω MSB', fromKey: 'omega_semi', scale: Math.pow(2,31), signed: true, shift: 24, color: '#0f8'},
+        {start: 204, len: 6,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        // Word 8: ω LSB (24)
+        {start: 210, len: 24, name: 'ω LSB', fromKey: 'omega_semi', scale: Math.pow(2,31), signed: true, mask: 0xFFFFFF, color: '#0f8'},
+        {start: 234, len: 6,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        // Word 9: Ωdot (24)
+        {start: 240, len: 24, name: 'Ωdot', fromKey: 'omega_dot_semi', scale: Math.pow(2,43), signed: true, color: '#fc4'},
+        {start: 264, len: 6,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        // Word 10: IODE (8) + IDOT (14) + reserved (2)
+        {start: 270, len: 8,  name: 'IODE', fromKey: 'iode', color: '#f8c'},
+        {start: 278, len: 14, name: 'IDOT', fromKey: 'idot_semi', scale: Math.pow(2,43), signed: true, color: '#fc4'},
+        {start: 292, len: 2,  name: 'reserved', fixed: 0, color: '#444'},
+        {start: 294, len: 6,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+    ],
+};
+
+function buildLnavValues(e) {
+    // Compute derived semicircle versions (radians → semicircles = ÷ π)
+    const tocSec = parseFloat(e.toc.split(':').slice(-1)[0]) + 60 * parseInt(e.toc.split(':')[1] || 0)
+                 + 3600 * parseInt(e.toc.split(' ').pop().split(':')[0] || 0);  // best-effort
+    return {
+        tow17:           0,  // not in RINEX — the actual TOW is the broadcast moment
+        gps_week:        e.gps_week & 0x3FF,
+        l2_codes:        e.l2_codes,
+        ura:             e.ura,
+        health_eph:      e.health_eph,
+        iodc:            e.iodc,
+        l2_p_flag:       e.l2_p_flag,
+        tgd:             e.tgd,
+        toc_sec:         e.toe,  // toc ≈ toe in most uploads; close enough for visualization
+        af0_raw:         e.af0_raw,
+        af1_raw:         e.af1_raw,
+        af2:             e.af2,
+        iode:            e.iode,
+        crs:             e.crs,
+        delta_n_semi:    e.delta_n_rad / Math.PI,
+        m0_semi:         e.m0_rad / Math.PI,
+        cuc:             e.cuc,
+        cus:             e.cus,
+        e_eph:           e.e_eph,
+        sqrt_a_eph:      e.sqrt_a_eph,
+        toe:             e.toe,
+        fit_interval:    e.fit_interval,
+        cic:             e.cic,
+        cis:             e.cis,
+        crc:             e.crc,
+        omega0_semi:     e.omega0_rad / Math.PI,
+        omega_semi:      e.omega_rad / Math.PI,
+        i0_semi:         e.i0_rad / Math.PI,
+        omega_dot_semi:  e.omega_dot_rad / Math.PI,
+        idot_semi:       e.idot_rad / Math.PI,
+    };
+}
+
+function encodeSubframe(sfNum, vals) {
+    const fields = LNAV_FIELDS[sfNum];
+    const bits = new Array(300).fill(0);
+    const labels = new Array(300).fill(null);
+    for (const f of fields) {
+        let raw = 0;
+        if (f.fixed !== undefined) {
+            raw = f.fixed;
+        } else if (f.fromKey !== undefined) {
+            const v = vals[f.fromKey];
+            if (v === null || v === undefined || isNaN(v)) raw = 0;
+            else if (f.scale) {
+                let scaled = Math.round(v * f.scale);
+                if (f.shift) scaled = Math.trunc(scaled / Math.pow(2, f.shift));
+                if (f.signed) raw = Number(_twos(scaled, f.len));
+                else raw = scaled & ((1 << Math.min(f.len, 30)) - 1);
+            } else if (f.shift) {
+                raw = (v >> f.shift) & ((1 << f.len) - 1);
+            } else if (f.mask !== undefined) {
+                raw = v & f.mask;
+            } else {
+                raw = v & ((1 << Math.min(f.len, 30)) - 1);
+            }
+        }
+        _writeBits(bits, f.start, f.len, raw);
+        for (let k = 0; k < f.len; k++) {
+            labels[f.start + k] = { name: f.name, color: f.color, isParity: f.isParity };
+        }
+    }
+    return { bits, labels, fields };
+}
+
+function renderLnavSubframes(e) {
+    const vals = buildLnavValues(e);
+    let html = '<div class="sd-section" style="grid-column:1/-1"><h4>BROADCAST BITS — LNAV (re-encoded from parsed values)</h4>';
+    html += '<div class="sf-hint">Each row is one 30-bit word. Hover any cell to see the field. Parity bits shown as 0 (would be Hamming-computed live).</div>';
+    for (const sf of [1, 2, 3]) {
+        const { bits, labels, fields } = encodeSubframe(sf, vals);
+        const sfTitle = { 1: 'Subframe 1 — Clock & SV health', 2: 'Subframe 2 — Ephemeris I', 3: 'Subframe 3 — Ephemeris II' }[sf];
+        html += `<div class="sf-block"><div class="sf-title">${sfTitle}</div><div class="sf-grid">`;
+        for (let w = 0; w < 10; w++) {
+            html += `<div class="sf-word"><div class="sf-wnum">W${w+1}</div>`;
+            for (let b = 0; b < 30; b++) {
+                const bi = w * 30 + b;
+                const lbl = labels[bi] || { name: '?', color: '#222' };
+                const tip = `${lbl.name} · bit ${bi}`;
+                html += `<span class="sf-bit" style="background:${lbl.color}${lbl.isParity ? ';opacity:0.4' : ''}" title="${tip}">${bits[bi]}</span>`;
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+        // Field legend below each subframe
+        const seen = new Set();
+        const legend = fields.filter(f => {
+            const key = f.name;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return !f.isParity && f.name !== 'reserved';
+        });
+        html += '<div class="sf-legend">';
+        legend.forEach(f => {
+            html += `<span class="sf-leg-item"><span class="sf-leg-sw" style="background:${f.color}"></span>${f.name}</span>`;
+        });
+        html += '</div></div>';
+    }
+    html += '</div>';
+    return html;
+}
 
 // ── Dilution of Precision (DOP) ───────────────────────────────────────
 let dopOn = false, dopRefreshTimer = null;
