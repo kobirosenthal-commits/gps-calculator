@@ -41,6 +41,7 @@ bei_cnv2_data = {'ephemeris': {}, 'date': None}  # BeiDou-3 B-CNAV2 (B2a)
 bei_cnv3_data = {'ephemeris': {}, 'date': None}  # BeiDou-3 B-CNAV3 (B2b)
 gal_inav_data = {'ephemeris': {}, 'date': None}  # Galileo I/NAV (E1-B, E5b-I)
 gal_fnav_data = {'ephemeris': {}, 'date': None}  # Galileo F/NAV (E5a-I)
+gps_cnv2_data = {'ephemeris': {}, 'date': None}  # GPS L1C (Block IIIA)
 glo_fdma_data = {'ephemeris': {}, 'date': None}  # GLONASS L1OF/L2OF FDMA (state-vector eph)
 glo_data = {'tles': [], 'fetched': None}
 bei_data = {'tles': [], 'fetched': None}
@@ -181,11 +182,12 @@ def _rinex4_refresh_worker():
     never appeared. The workflow now does the parse in CI and writes small JSONs
     that load in milliseconds. Falls back to streaming the raw file if the
     JSONs are absent (first deploy after this change, or workflow failure)."""
-    global rinex4_data, bei_d_data, bei_cnv1_data, bei_cnv2_data, bei_cnv3_data, gal_inav_data, gal_fnav_data, glo_fdma_data, rinex4_diag
+    global rinex4_data, bei_d_data, bei_cnv1_data, bei_cnv2_data, bei_cnv3_data, gal_inav_data, gal_fnav_data, glo_fdma_data, gps_cnv2_data, rinex4_diag
     import os, traceback
     rinex4_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'gps_rinex4.txt')
     json_targets = [
         ('rinex4_gps_cnav.json', 'rinex4_data',    'GPS CNAV'),
+        ('rinex4_gps_cnv2.json', 'gps_cnv2_data',  'GPS CNV2 (L1C)'),
         ('rinex4_bds_d.json',    'bei_d_data',     'BeiDou D1/D2'),
         ('rinex4_bds_cnv1.json', 'bei_cnv1_data',  'BeiDou CNV1'),
         ('rinex4_bds_cnv2.json', 'bei_cnv2_data',  'BeiDou CNV2'),
@@ -515,6 +517,33 @@ def satellite_detail():
                 'top':          cnav['top'],
                 'rinex4_date':  rinex4_data['date'],
             }
+        cnv2 = gps_cnv2_data['ephemeris'].get(prn) or gps_cnv2_data['ephemeris'].get(str(prn))
+        if cnv2:
+            resp['cnv2'] = {
+                'toc':         cnv2['epoch'],
+                'gps_week':    cnv2['gps_week'],
+                'top':         cnv2['top'],
+                'toe':         cnv2['toe'],
+                'af0':         cnv2['af0'],
+                'af1':         cnv2['af1'],
+                'af2':         cnv2['af2'],
+                'sqrt_a':      cnv2['sqrt_a'],
+                'e':           cnv2['e'],
+                'm0_deg':      math.degrees(cnv2['m0']),
+                'omega0_deg':  math.degrees(cnv2['omega0']),
+                'omega_deg':   math.degrees(cnv2['omega']),
+                'i0_deg':      math.degrees(cnv2['i0']),
+                'tgd':         cnv2['tgd'],
+                'isc_l1cd':    cnv2['isc_l1cd'],
+                'isc_l1cp':    cnv2['isc_l1cp'],
+                'isc_l1ca':    cnv2['isc_l1ca'],
+                'isc_l2c':     cnv2['isc_l2c'],
+                'isc_l5i5':    cnv2['isc_l5i5'],
+                'isc_l5q5':    cnv2['isc_l5q5'],
+                'sisai_oe':    cnv2['sisai_oe'],
+                'sisai_ocb':   cnv2['sisai_ocb'],
+                'rinex4_date': gps_cnv2_data['date'],
+            }
         return jsonify(resp)
 
     cache = {'GLONASS': glo_data, 'BEIDOU': bei_data, 'GALILEO': gal_data}.get(constellation)
@@ -757,6 +786,7 @@ def refresh_data_endpoint():
         try:
             for fname, varname, _ in [
                 ('rinex4_gps_cnav.json', 'rinex4_data',    'GPS CNAV'),
+        ('rinex4_gps_cnv2.json', 'gps_cnv2_data',  'GPS CNV2 (L1C)'),
                 ('rinex4_bds_d.json',    'bei_d_data',     'BeiDou D1/D2'),
                 ('rinex4_bds_cnv1.json', 'bei_cnv1_data',  'BeiDou CNV1'),
                 ('rinex4_bds_cnv2.json', 'bei_cnv2_data',  'BeiDou CNV2'),

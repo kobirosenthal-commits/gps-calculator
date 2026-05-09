@@ -132,6 +132,8 @@ def reparse_rinex4_jsons(dt, log):
     date_str = dt.strftime('%Y-%m-%d')
     targets = (
         ('gps_cnav', 'rinex4_gps_cnav.json'),
+        ('gps_cnv2', 'rinex4_gps_cnv2.json'),
+        ('qzs_cnv2', 'rinex4_qzs_cnv2.json'),
         ('bds_d',    'rinex4_bds_d.json'),
         ('bds_cnv1', 'rinex4_bds_cnv1.json'),
         ('bds_cnv2', 'rinex4_bds_cnv2.json'),

@@ -612,6 +612,8 @@ def parse_rinex4_combined(line_iter, progress=None):
     glo_fdma = {}
     bds_cnv2 = {}
     bds_cnv3 = {}
+    gps_cnv2 = {}    # GPS L1C (Block IIIA satellites)
+    qzs_cnv2 = {}    # QZSS L1C (J-prefix sats; same record format as GPS CNV2)
     # Iono correction blocks: most recent of each model wins
     iono = {'klobuchar': None, 'nequick': None, 'bdgim': None}
     # System Time Offsets (e.g. GPUT = GPS-UTC, BDGA = BeiDou-Galileo, etc.) — keyed by 4-letter code
@@ -790,6 +792,43 @@ def parse_rinex4_combined(line_iter, progress=None):
                     'top': v[28],
                     'gps_week': int(v[29]) if len(v) > 29 else 0,
                 }
+        elif (sys_letter == 'G' or sys_letter == 'J') and msg_type == 'CNV2':
+            # GPS L1C / QZSS L1C — same record structure (10 continuation lines).
+            # Adds ISC_L1Cd, ISC_L1Cp on top of CNAV fields.
+            rec = _read_record_from_iter(it, 9, epoch_line)
+            if not rec or len(rec['vals']) < 30:
+                continue
+            v = rec['vals']
+            toe = v[8]
+            target = gps_cnv2 if sys_letter == 'G' else qzs_cnv2
+            if prn not in target or toe > target[prn].get('toe', -1e30):
+                # Layout per RINEX 4 / ICD-GPS-800: 9 data lines, last two carry top/WN.
+                target[prn] = {
+                    'prn': prn,
+                    'epoch':  f"{rec['year']:04d}-{rec['month']:02d}-{rec['day']:02d} {rec['hour']:02d}:{rec['minute']:02d}:00",
+                    'af0': rec['af0'], 'af1': rec['af1'], 'af2': rec['af2'],
+                    'adot': v[0], 'crs': v[1], 'delta_n': v[2], 'm0': v[3],
+                    'cuc': v[4], 'e': v[5], 'cus': v[6], 'sqrt_a': v[7],
+                    'toe': toe, 'cic': v[9], 'omega0': v[10], 'cis': v[11],
+                    'i0': v[12], 'crc': v[13], 'omega': v[14], 'omega_dot': v[15],
+                    'idot': v[16], 'delta_n_dot': v[17],
+                    'urai_ned0': v[18] if len(v) > 18 else 0.0,
+                    'urai_ned1': v[19] if len(v) > 19 else 0.0,
+                    'urai_ned2': v[20] if len(v) > 20 else 0.0,
+                    'sisai_oe':  v[21] if len(v) > 21 else 0.0,
+                    'sisai_ocb': v[22] if len(v) > 22 else 0.0,
+                    'sisai_oc1': v[23] if len(v) > 23 else 0.0,
+                    'sisai_oc2': v[24] if len(v) > 24 else 0.0,
+                    'isc_l1cd':  v[25] if len(v) > 25 else 0.0,
+                    'isc_l1cp':  v[26] if len(v) > 26 else 0.0,
+                    'tgd':       v[27] if len(v) > 27 else 0.0,
+                    'isc_l1ca':  v[28] if len(v) > 28 else 0.0,
+                    'isc_l2c':   v[29] if len(v) > 29 else 0.0,
+                    'isc_l5i5':  v[30] if len(v) > 30 else 0.0,
+                    'isc_l5q5':  v[31] if len(v) > 31 else 0.0,
+                    'top':       v[32] if len(v) > 32 else 0.0,
+                    'gps_week':  int(v[33]) if len(v) > 33 else 0,
+                }
         elif sys_letter == 'C' and msg_type in ('D1', 'D2'):
             rec = _read_record_from_iter(it, 8, epoch_line)
             if not rec or len(rec['vals']) < 26:
@@ -946,6 +985,8 @@ def parse_rinex4_combined(line_iter, progress=None):
         'glo_fdma': glo_fdma,
         'bds_cnv2': bds_cnv2,
         'bds_cnv3': bds_cnv3,
+        'gps_cnv2': gps_cnv2,
+        'qzs_cnv2': qzs_cnv2,
         'iono': iono,
         'sto': sto,
         'eop': eop,
