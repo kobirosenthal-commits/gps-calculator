@@ -291,10 +291,14 @@
         .sf-wnum { font-size: 0.65em; color: #5599cc; min-width: 26px; padding: 0 4px; font-family: monospace; }
         .sf-bit {
             display: inline-block; width: 16px; height: 16px; min-width: 16px;
-            font-size: 0.6em; font-family: monospace; color: rgba(0,0,0,0.7);
+            font-size: 0.6em; font-family: monospace; color: #fff;
+            mix-blend-mode: difference;  /* readable on any background colour */
             text-align: center; line-height: 16px; font-weight: 700;
             border-radius: 2px; cursor: help;
         }
+        .sf-block.sf-active .sf-grid { box-shadow: 0 0 0 2px #7ecfff; }
+        .sf-block .sf-title .sf-live { font-size: 0.85em; color: #7ecfff; margin-left: 8px; opacity: 0.65; }
+        .sf-block.sf-active .sf-title .sf-live { opacity: 1; color: #00ff88; }
         .sf-legend { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 4px; font-size: 0.66em; color: #aac; }
         .sf-leg-item { display: inline-flex; align-items: center; gap: 3px; }
         .sf-leg-sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
@@ -2062,6 +2066,7 @@ function loadSpContent(sat) {
                 const el = document.getElementById('sd-sf-display');
                 if (el) el.outerHTML = renderNavBlock(sat.constellation);
             }, 1000);
+            if (sat.constellation === 'GPS' && data.ephemeris) startLnavBitsTicker();
             // If GPS RINEX sections are still pending, reload automatically once ready
             const lnavPending = sat.constellation === 'GPS' && !data.ephemeris;
             const cnavPending = sat.constellation === 'GPS' && !data.cnav;
@@ -2093,6 +2098,7 @@ function openSatPage(sat) {
 
 function closeSatPage() {
     clearInterval(detailRefreshTimer);
+    clearInterval(lnavBitsTimer);
     document.getElementById('sat-page').classList.remove('open');
 }
 
@@ -2579,39 +2585,74 @@ function encodeSubframe(sfNum, vals) {
 
 function renderLnavSubframes(e) {
     const vals = buildLnavValues(e);
-    let html = '<div class="sd-section" style="grid-column:1/-1"><h4>BROADCAST BITS — LNAV (re-encoded from parsed values)</h4>';
-    html += '<div class="sf-hint">Each row is one 30-bit word. Hover any cell to see the field. Parity bits shown as 0 (would be Hamming-computed live).</div>';
+    let html = '<div class="sd-section" id="sd-lnav-bits" style="grid-column:1/-1"><h4>BROADCAST BITS — LNAV (re-encoded, live TOW)</h4>';
+    html += '<div class="sf-hint">Each row is one 30-bit word. Hover any cell for the field name. Bits update each second — TOW count and the active-subframe highlight follow GPS time. Parity bits dimmed (Hamming-computed live by a real receiver).</div>';
     for (const sf of [1, 2, 3]) {
         const { bits, labels, fields } = encodeSubframe(sf, vals);
         const sfTitle = { 1: 'Subframe 1 — Clock & SV health', 2: 'Subframe 2 — Ephemeris I', 3: 'Subframe 3 — Ephemeris II' }[sf];
-        html += `<div class="sf-block"><div class="sf-title">${sfTitle}</div><div class="sf-grid">`;
+        html += `<div class="sf-block" id="sf-block-${sf}"><div class="sf-title">${sfTitle} <span class="sf-live" id="sf-live-${sf}">— · in queue</span></div><div class="sf-grid">`;
         for (let w = 0; w < 10; w++) {
             html += `<div class="sf-word"><div class="sf-wnum">W${w+1}</div>`;
             for (let b = 0; b < 30; b++) {
                 const bi = w * 30 + b;
                 const lbl = labels[bi] || { name: '?', color: '#222' };
                 const tip = `${lbl.name} · bit ${bi}`;
-                html += `<span class="sf-bit" style="background:${lbl.color}${lbl.isParity ? ';opacity:0.4' : ''}" title="${tip}">${bits[bi]}</span>`;
+                html += `<span class="sf-bit" id="sfb-${sf}-${bi}" style="background:${lbl.color}${lbl.isParity ? ';opacity:0.4' : ''}" title="${tip}">${bits[bi]}</span>`;
             }
             html += '</div>';
         }
         html += '</div>';
-        // Field legend below each subframe
         const seen = new Set();
-        const legend = fields.filter(f => {
-            const key = f.name;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return !f.isParity && f.name !== 'reserved';
-        });
+        const legend = fields.filter(f => !seen.has(f.name) && (seen.add(f.name), !f.isParity && f.name !== 'reserved'));
         html += '<div class="sf-legend">';
-        legend.forEach(f => {
-            html += `<span class="sf-leg-item"><span class="sf-leg-sw" style="background:${f.color}"></span>${f.name}</span>`;
-        });
+        legend.forEach(f => { html += `<span class="sf-leg-item"><span class="sf-leg-sw" style="background:${f.color}"></span>${f.name}</span>`; });
         html += '</div></div>';
     }
     html += '</div>';
     return html;
+}
+
+// Patch the TOW bits + active-subframe highlight every second.
+// TOW count = next subframe's start-of-week seconds / 6, in 17 bits.
+// Frame cycles SF1→SF2→SF3→SF4→SF5 every 30 s (6 s per subframe).
+let lnavBitsTimer = null;
+function startLnavBitsTicker() {
+    clearInterval(lnavBitsTimer);
+    lnavBitsTimer = setInterval(updateLnavBitsLive, 1000);
+    updateLnavBitsLive();
+}
+function updateLnavBitsLive() {
+    if (!document.getElementById('sd-lnav-bits')) {
+        clearInterval(lnavBitsTimer);
+        return;
+    }
+    // GPS week-second from current (or frozen) time
+    const nowMs = frozenTime || Date.now();
+    const secOfWeek = Math.floor((nowMs / 1000) - 315964800) % 604800;
+    // GPS week TOW counts the *next* subframe's z-count = SOW/6 + 1
+    const tow17 = ((Math.floor(secOfWeek / 6) + 1) % 100800) & 0x1FFFF;
+    // Currently-broadcasting subframe: cycles 1..5 every 6s
+    const activeSf = ((Math.floor(secOfWeek / 6)) % 5) + 1;
+    // Position within the 6-second subframe (0..5.999)
+    const subSec = (secOfWeek % 6) + (nowMs / 1000 - Math.floor(nowMs / 1000));
+    for (const sf of [1, 2, 3]) {
+        // Patch the 17-bit TOW count (bits 30..46 inside the subframe)
+        for (let i = 0; i < 17; i++) {
+            const bit = (tow17 >> (16 - i)) & 1;
+            const cell = document.getElementById(`sfb-${sf}-${30 + i}`);
+            if (cell && cell.textContent !== String(bit)) cell.textContent = bit;
+        }
+        const block = document.getElementById(`sf-block-${sf}`);
+        const live  = document.getElementById(`sf-live-${sf}`);
+        if (sf === activeSf) {
+            block && block.classList.add('sf-active');
+            live  && (live.textContent = `▶ broadcasting (${subSec.toFixed(1)}s / 6s)`);
+        } else {
+            block && block.classList.remove('sf-active');
+            const distance = ((sf - activeSf + 5) % 5);
+            live  && (live.textContent = `· next in ${distance * 6 - subSec | 0}s`);
+        }
+    }
 }
 
 // ── Dilution of Precision (DOP) ───────────────────────────────────────
