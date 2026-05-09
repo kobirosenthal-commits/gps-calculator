@@ -185,6 +185,41 @@ def fetch_gps_rinex(dt):
     return None
 
 
+def parse_rinex2_utc_header(text):
+    """Extract UTC and leap-second parameters from a RINEX 2 GPS nav header.
+    Returns dict with a0, a1, tot, wnt (DELTA-UTC line) and dt_ls, dt_ls_future,
+    wn_lsf, dn (LEAP SECONDS line). Any missing field is None."""
+    out = {'a0': None, 'a1': None, 'tot': None, 'wnt': None,
+           'dt_ls': None, 'dt_ls_future': None, 'wn_lsf': None, 'dn': None}
+    for ln in text.splitlines():
+        if 'END OF HEADER' in ln:
+            break
+        # DELTA-UTC: A0,A1,T,W   ‹4 fields, fixed columns or whitespace‹
+        if 'DELTA-UTC' in ln:
+            body = ln[3:60].replace('D', 'E').replace('d', 'e')
+            tokens = re.findall(r'[+-]?\d*\.?\d+(?:[eE][+-]?\d+)?', body)
+            try:
+                if len(tokens) >= 4:
+                    out['a0']  = float(tokens[0])
+                    out['a1']  = float(tokens[1])
+                    out['tot'] = int(float(tokens[2]))
+                    out['wnt'] = int(float(tokens[3]))
+            except ValueError:
+                pass
+        elif 'LEAP SECONDS' in ln:
+            tokens = re.findall(r'-?\d+', ln[:60])
+            try:
+                if len(tokens) >= 1:
+                    out['dt_ls'] = int(tokens[0])
+                if len(tokens) >= 4:
+                    out['dt_ls_future'] = int(tokens[1])
+                    out['wn_lsf']       = int(tokens[2])
+                    out['dn']           = int(tokens[3])
+            except ValueError:
+                pass
+    return out
+
+
 def parse_rinex2_nav(text):
     """Parse RINEX 2.x GPS broadcast nav. Returns {prn: eph_dict} keyed on most-recent TOE."""
     lines = text.splitlines()
@@ -503,9 +538,23 @@ def parse_rinex4_combined(line_iter, progress=None):
     it = iter(line_iter)
     line_count = 0
     eph_count = 0
-    # Skip header
+    # Skip header but capture LEAP SECONDS line (format:
+    #     dt_ls   dt_ls_future   wn_lsf   dn   timesys                   LEAP SECONDS)
+    leap = None
     for line in it:
         line_count += 1
+        if 'LEAP SECONDS' in line and leap is None:
+            tokens = re.findall(r'-?\d+', line[:60])
+            if tokens:
+                try:
+                    leap = {
+                        'dt_ls':        int(tokens[0]) if len(tokens) >= 1 else None,
+                        'dt_ls_future': int(tokens[1]) if len(tokens) >= 2 else None,
+                        'wn_lsf':       int(tokens[2]) if len(tokens) >= 3 else None,
+                        'dn':           int(tokens[3]) if len(tokens) >= 4 else None,
+                    }
+                except ValueError:
+                    pass
         if 'END OF HEADER' in line:
             break
 
@@ -854,6 +903,7 @@ def parse_rinex4_combined(line_iter, progress=None):
         'iono': iono,
         'sto': sto,
         'eop': eop,
+        'leap': leap,
     }
 
 

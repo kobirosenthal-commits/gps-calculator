@@ -160,11 +160,12 @@ def reparse_rinex4_jsons(dt, log):
         out['rinex4_iono.json'] = sum(1 for v in iono.values() if v)
     sto = parsed.get('sto') or {}
     eop = parsed.get('eop')
-    if sto or eop:
+    leap = parsed.get('leap')
+    if sto or eop or leap:
         with open(os.path.join(DATA_DIR, 'rinex4_systime.json'), 'w', encoding='utf-8') as f:
-            json.dump({'sto': sto, 'eop': eop, 'date': date_str}, f)
-        log(f"  JSON OK: rinex4_systime.json ({len(sto)} STO codes, EOP {'yes' if eop else 'no'})")
-        out['rinex4_systime.json'] = len(sto) + (1 if eop else 0)
+            json.dump({'sto': sto, 'eop': eop, 'leap': leap, 'date': date_str}, f)
+        log(f"  JSON OK: rinex4_systime.json ({len(sto)} STO, EOP {'yes' if eop else 'no'}, leap {'yes' if leap else 'no'})")
+        out['rinex4_systime.json'] = len(sto) + (1 if eop else 0) + (1 if leap else 0)
     return out
 
 

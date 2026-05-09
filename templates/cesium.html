@@ -1617,6 +1617,21 @@ function renderSysTimeSection(constellation) {
     if (!hasAny) {
         body += '<div class="sd-row"><span class="sd-lbl">status</span><span class="sd-val" style="color:#886">no STO blocks in current RINEX 4 file</span></div>';
     }
+    // Leap-second info — only meaningful for GPS (origin of the broadcast leap parameters)
+    const leap = sysTimeData && sysTimeData.leap;
+    if (constellation === 'GPS' && leap && leap.dt_ls !== null) {
+        body += '<div class="sd-sub">Leap seconds (from RINEX 4 header)</div>';
+        body += sdRow('ΔtLS (current)', leap.dt_ls + ' s');
+        if (leap.dt_ls_future !== null) {
+            body += sdRow('ΔtLSF (future)', leap.dt_ls_future + ' s');
+            const pending = leap.dt_ls_future - leap.dt_ls;
+            body += sdRow('Pending step', pending === 0
+                ? '<span style="color:#7ecfff">none scheduled</span>'
+                : `<span style="color:#ff9944">${pending > 0 ? '+' : ''}${pending} s scheduled</span>`);
+        }
+        if (leap.wn_lsf !== null) body += sdRow('WN_LSF', leap.wn_lsf + ' (GPS week mod 256)');
+        if (leap.dn     !== null) body += sdRow('DN', leap.dn + ' (day-of-week, 1=Sun … 7=Sat)');
+    }
     body += '</div>';
     return body;
 }
