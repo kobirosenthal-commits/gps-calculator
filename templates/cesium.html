@@ -2513,6 +2513,169 @@ const LNAV_FIELDS = {
     ],
 };
 
+// Subframes 4 & 5 are paginated — 25 pages, one per 30-s frame. Each page
+// has the same TLM (W1) + HOW (W2) header and a distinct payload. Page is
+// identified by Data-ID (2 bits) + SV-ID (6 bits) at the start of word 3.
+// Sources for page meaning: IS-GPS-200 §20.3.3.5
+
+// SV-ID lookup per IS-GPS-200 Table 20-V (subframe 4) & 20-VI (subframe 5)
+const SF4_SVID = {
+    1: 57, 2: 25, 3: 26, 4: 27, 5: 28, 6: 57, 7: 29, 8: 30, 9: 31, 10: 32,
+    11: 57, 12: 62, 13: 52, 14: 53, 15: 54, 16: 57, 17: 55, 18: 56, 19: 58,
+    20: 59, 21: 57, 22: 60, 23: 61, 24: 62, 25: 63,
+};
+const SF4_KIND = {
+    13: 'NMCT (range deviations)', 17: 'Special messages (text)',
+    18: 'Klobuchar iono + UTC params', 25: 'A-S flags + SV config',
+};
+
+function _commonHeaderFields(sfId, page) {
+    const svid = sfId === 4 ? (SF4_SVID[page] || 57) : (page <= 24 ? page : 51);
+    return [
+        {start: 0, len: 8,  name: 'PREAMBLE', fixed: 0x8B, color: '#666'},
+        {start: 8, len: 22, name: 'TLM/parity', fixed: 0, color: '#888'},
+        {start: 30, len: 17, name: 'TOW count', fromKey: 'tow17', color: '#88f'},
+        {start: 47, len: 2,  name: 'flags', fixed: 0, color: '#666'},
+        {start: 49, len: 3,  name: 'subframe ID', fixed: sfId, color: '#fa6'},
+        {start: 52, len: 8,  name: 'parity+pad', fixed: 0, color: '#333', isParity: true},
+        {start: 60, len: 2,  name: 'Data ID', fixed: 1, color: '#aaf'},
+        {start: 62, len: 6,  name: 'SV ID',   fixed: svid, color: '#f8c'},
+    ];
+}
+
+// Build SF4 page-specific field map. Only a handful of pages carry useful
+// data we can re-encode; others get TLM/HOW/page-ID + a "reserved" stub.
+function buildSf4Page(page) {
+    const fields = _commonHeaderFields(4, page);
+    if (page === 18) {
+        // Klobuchar α0..α3 + β0..β3 + UTC A0/A1/ΔtLS/tot/WNt/WN_LSF/DN/ΔtLSF
+        fields.push(
+            {start: 68,  len: 8,  name: 'α₀',         fromKey: 'alpha0', scale: Math.pow(2,30),  signed: true, color: '#0fa'},
+            {start: 76,  len: 8,  name: 'α₁',         fromKey: 'alpha1', scale: Math.pow(2,27),  signed: true, color: '#0fa'},
+            {start: 84,  len: 6,  name: 'parity',     fixed: 0, color: '#333', isParity: true},
+            {start: 90,  len: 8,  name: 'α₂',         fromKey: 'alpha2', scale: Math.pow(2,24),  signed: true, color: '#0fa'},
+            {start: 98,  len: 8,  name: 'α₃',         fromKey: 'alpha3', scale: Math.pow(2,24),  signed: true, color: '#0fa'},
+            {start: 106, len: 8,  name: 'β₀',         fromKey: 'beta0',  scale: 1/Math.pow(2,11), signed: true, color: '#0c8'},
+            {start: 114, len: 6,  name: 'parity',     fixed: 0, color: '#333', isParity: true},
+            {start: 120, len: 8,  name: 'β₁',         fromKey: 'beta1',  scale: 1/Math.pow(2,14), signed: true, color: '#0c8'},
+            {start: 128, len: 8,  name: 'β₂',         fromKey: 'beta2',  scale: 1/Math.pow(2,16), signed: true, color: '#0c8'},
+            {start: 136, len: 8,  name: 'β₃',         fromKey: 'beta3',  scale: 1/Math.pow(2,16), signed: true, color: '#0c8'},
+            {start: 144, len: 6,  name: 'parity',     fixed: 0, color: '#333', isParity: true},
+            {start: 150, len: 24, name: 'A₁ UTC',     fromKey: 'utc_a1', scale: Math.pow(2,50),  signed: true, color: '#fc4'},
+            {start: 174, len: 6,  name: 'parity',     fixed: 0, color: '#333', isParity: true},
+            {start: 180, len: 24, name: 'A₀ UTC MSB', fromKey: 'utc_a0', scale: Math.pow(2,30),  signed: true, shift: 8, color: '#fc4'},
+            {start: 204, len: 6,  name: 'parity',     fixed: 0, color: '#333', isParity: true},
+            {start: 210, len: 8,  name: 'A₀ UTC LSB', fromKey: 'utc_a0', scale: Math.pow(2,30),  signed: true, mask: 0xFF, color: '#fc4'},
+            {start: 218, len: 8,  name: 'tot',        fromKey: 'utc_tot', scale: 1/4096, color: '#88f'},
+            {start: 226, len: 8,  name: 'WN_t',       fromKey: 'utc_wnt', mask: 0xFF, color: '#0f8'},
+            {start: 234, len: 6,  name: 'parity',     fixed: 0, color: '#333', isParity: true},
+            {start: 240, len: 8,  name: 'ΔtLS',       fromKey: 'leap_dt_ls', signed: true, color: '#f55'},
+            {start: 248, len: 8,  name: 'WN_LSF',     fromKey: 'leap_wn_lsf', mask: 0xFF, color: '#0f8'},
+            {start: 256, len: 8,  name: 'DN',         fromKey: 'leap_dn',  color: '#cf6'},
+            {start: 264, len: 6,  name: 'parity',     fixed: 0, color: '#333', isParity: true},
+            {start: 270, len: 8,  name: 'ΔtLSF',      fromKey: 'leap_dt_ls_fut', signed: true, color: '#f55'},
+            {start: 278, len: 14, name: 'reserved',   fixed: 0, color: '#444'},
+            {start: 292, len: 2,  name: 'reserved',   fixed: 0, color: '#444'},
+            {start: 294, len: 6,  name: 'parity',     fixed: 0, color: '#333', isParity: true},
+        );
+    } else if (page === 25) {
+        // A-S flags (4 bits × 32 SVs = 128 bits) + SV config + health for SVs 25-32
+        fields.push(
+            {start: 68,  len: 16, name: 'AS flags MSB', fromKey: 'as_flags_w3', color: '#cf6'},
+            {start: 84,  len: 6,  name: 'parity',       fixed: 0, color: '#333', isParity: true},
+            {start: 90,  len: 24, name: 'AS flags W4',  fromKey: 'as_flags_w4', color: '#cf6'},
+            {start: 114, len: 6,  name: 'parity',       fixed: 0, color: '#333', isParity: true},
+            {start: 120, len: 24, name: 'AS flags W5',  fromKey: 'as_flags_w5', color: '#cf6'},
+            {start: 144, len: 6,  name: 'parity',       fixed: 0, color: '#333', isParity: true},
+            {start: 150, len: 24, name: 'AS flags W6',  fromKey: 'as_flags_w6', color: '#cf6'},
+            {start: 174, len: 6,  name: 'parity',       fixed: 0, color: '#333', isParity: true},
+            {start: 180, len: 24, name: 'AS flags W7',  fromKey: 'as_flags_w7', color: '#cf6'},
+            {start: 204, len: 6,  name: 'parity',       fixed: 0, color: '#333', isParity: true},
+            {start: 210, len: 24, name: 'AS flags W8',  fromKey: 'as_flags_w8', color: '#cf6'},
+            {start: 234, len: 6,  name: 'parity',       fixed: 0, color: '#333', isParity: true},
+            {start: 240, len: 6,  name: 'SV25 health',  fromKey: 'h25', color: '#f55'},
+            {start: 246, len: 6,  name: 'SV26 health',  fromKey: 'h26', color: '#f55'},
+            {start: 252, len: 6,  name: 'SV27 health',  fromKey: 'h27', color: '#f55'},
+            {start: 258, len: 6,  name: 'SV28 health',  fromKey: 'h28', color: '#f55'},
+            {start: 264, len: 6,  name: 'parity',       fixed: 0, color: '#333', isParity: true},
+            {start: 270, len: 6,  name: 'SV29 health',  fromKey: 'h29', color: '#f55'},
+            {start: 276, len: 6,  name: 'SV30 health',  fromKey: 'h30', color: '#f55'},
+            {start: 282, len: 6,  name: 'SV31 health',  fromKey: 'h31', color: '#f55'},
+            {start: 288, len: 6,  name: 'SV32 health',  fromKey: 'h32', color: '#f55'},
+            {start: 294, len: 6,  name: 'parity',       fixed: 0, color: '#333', isParity: true},
+        );
+    } else if ([2,3,4,5,7,8,9,10].includes(page)) {
+        // Almanac for one SV (25-32). Use simplified almanac field layout.
+        const almPrn = SF4_SVID[page];
+        fields.push(...buildAlmanacFields(almPrn));
+    } else {
+        // Reserved / system pages: fill remainder with reserved
+        fields.push(
+            {start: 68, len: 16, name: 'reserved', fixed: 0, color: '#444'},
+            {start: 84, len: 6,  name: 'parity',   fixed: 0, color: '#333', isParity: true},
+            {start: 90, len: 200, name: 'reserved', fixed: 0, color: '#444'},
+            {start: 290, len: 4,  name: 'reserved', fixed: 0, color: '#444'},
+            {start: 294, len: 6,  name: 'parity',   fixed: 0, color: '#333', isParity: true},
+        );
+    }
+    return fields;
+}
+
+function buildSf5Page(page) {
+    const fields = _commonHeaderFields(5, page);
+    if (page === 25) {
+        fields.push(
+            {start: 68, len: 8,  name: 'toa',  fromKey: 'alm_toa', scale: 1/4096, color: '#88f'},
+            {start: 76, len: 8,  name: 'WN_a', fromKey: 'alm_wn',  mask: 0xFF, color: '#0f8'},
+            {start: 84, len: 6,  name: 'parity', fixed: 0, color: '#333', isParity: true},
+        );
+        // SV1..SV24 health (6 bits each = 144 bits)
+        let off = 90;
+        for (let prn = 1; prn <= 24; prn++) {
+            // pack 4 SVs per word (24 bits) before parity
+            if ((prn - 1) % 4 === 0 && prn > 1) {
+                fields.push({start: off, len: 6, name: 'parity', fixed: 0, color: '#333', isParity: true});
+                off += 6;
+            }
+            fields.push({start: off, len: 6, name: `SV${prn} health`, fromKey: `h${prn}`, color: '#f55'});
+            off += 6;
+        }
+        fields.push({start: off, len: 6, name: 'parity', fixed: 0, color: '#333', isParity: true});
+    } else if (page >= 1 && page <= 24) {
+        // Almanac for SV = page
+        fields.push(...buildAlmanacFields(page));
+    }
+    return fields;
+}
+
+// Almanac fields for a given PRN, starting at bit 68 (after Data-ID + SV-ID)
+function buildAlmanacFields(prn) {
+    const k = `alm${prn}_`;
+    return [
+        {start: 68,  len: 16, name: 'eccentricity', fromKey: k+'e',     scale: Math.pow(2,21), color: '#0f8'},
+        {start: 84,  len: 6,  name: 'parity',       fixed: 0, color: '#333', isParity: true},
+        {start: 90,  len: 8,  name: 'toa',          fromKey: k+'toa',   scale: 1/4096, color: '#88f'},
+        {start: 98,  len: 16, name: 'δi',           fromKey: k+'delta_i', scale: Math.pow(2,19), signed: true, color: '#fc4'},
+        {start: 114, len: 6,  name: 'parity',       fixed: 0, color: '#333', isParity: true},
+        {start: 120, len: 16, name: 'Ωdot',         fromKey: k+'omega_dot', scale: Math.pow(2,38), signed: true, color: '#fc4'},
+        {start: 136, len: 8,  name: 'health',       fromKey: k+'health',  color: '#f55'},
+        {start: 144, len: 6,  name: 'parity',       fixed: 0, color: '#333', isParity: true},
+        {start: 150, len: 24, name: '√A',           fromKey: k+'sqrt_a',  scale: Math.pow(2,11), color: '#0f8'},
+        {start: 174, len: 6,  name: 'parity',       fixed: 0, color: '#333', isParity: true},
+        {start: 180, len: 24, name: 'Ω₀',           fromKey: k+'omega0',  scale: Math.pow(2,23), signed: true, color: '#0f8'},
+        {start: 204, len: 6,  name: 'parity',       fixed: 0, color: '#333', isParity: true},
+        {start: 210, len: 24, name: 'ω',            fromKey: k+'omega',   scale: Math.pow(2,23), signed: true, color: '#0f8'},
+        {start: 234, len: 6,  name: 'parity',       fixed: 0, color: '#333', isParity: true},
+        {start: 240, len: 24, name: 'M₀',           fromKey: k+'m0',      scale: Math.pow(2,23), signed: true, color: '#0f8'},
+        {start: 264, len: 6,  name: 'parity',       fixed: 0, color: '#333', isParity: true},
+        {start: 270, len: 8,  name: 'af₀ MSB',      fromKey: k+'af0',     scale: Math.pow(2,20), signed: true, shift: 3, color: '#fa6'},
+        {start: 278, len: 11, name: 'af₁',          fromKey: k+'af1',     scale: Math.pow(2,38), signed: true, color: '#fa6'},
+        {start: 289, len: 3,  name: 'af₀ LSB',      fromKey: k+'af0',     scale: Math.pow(2,20), signed: true, mask: 0x7, color: '#fa6'},
+        {start: 292, len: 2,  name: 'reserved',     fixed: 0, color: '#444'},
+        {start: 294, len: 6,  name: 'parity',       fixed: 0, color: '#333', isParity: true},
+    ];
+}
+
 function buildLnavValues(e) {
     // Compute derived semicircle versions (radians → semicircles = ÷ π)
     const tocSec = parseFloat(e.toc.split(':').slice(-1)[0]) + 60 * parseInt(e.toc.split(':')[1] || 0)
@@ -2551,8 +2714,63 @@ function buildLnavValues(e) {
     };
 }
 
-function encodeSubframe(sfNum, vals) {
-    const fields = LNAV_FIELDS[sfNum];
+// Build the per-frame extras: iono coefficients (Klobuchar), UTC params, leap
+// seconds, GPS almanac. These come from the global ionoData / sysTimeData /
+// gpsAlmanac that loadSpContent populated.
+function buildLnavExtras() {
+    const extras = {};
+    const k = (ionoData && ionoData.klobuchar && ionoData.klobuchar.values) || [];
+    extras.alpha0 = k[0] || 0; extras.alpha1 = k[1] || 0;
+    extras.alpha2 = k[2] || 0; extras.alpha3 = k[3] || 0;
+    extras.beta0  = k[4] || 0; extras.beta1  = k[5] || 0;
+    extras.beta2  = k[6] || 0; extras.beta3  = k[7] || 0;
+    const utc = sysTimeData && sysTimeData.sto && sysTimeData.sto.GPUT;
+    if (utc && utc.values) {
+        extras.utc_tot = utc.values[0] || 0;
+        extras.utc_a0  = utc.values[1] || 0;
+        extras.utc_a1  = utc.values[2] || 0;
+        extras.utc_wnt = (utc.values[3] || 0) & 0xFF;
+    } else {
+        extras.utc_tot = extras.utc_a0 = extras.utc_a1 = extras.utc_wnt = 0;
+    }
+    const lp = sysTimeData && sysTimeData.leap;
+    extras.leap_dt_ls     = lp && lp.dt_ls != null ? lp.dt_ls : 18;
+    extras.leap_dt_ls_fut = lp && lp.dt_ls_future != null ? lp.dt_ls_future : 18;
+    extras.leap_wn_lsf    = lp && lp.wn_lsf != null ? lp.wn_lsf & 0xFF : 0;
+    extras.leap_dn        = lp && lp.dn != null ? lp.dn : 0;
+    // Per-PRN almanac
+    for (let prn = 1; prn <= 32; prn++) {
+        const a = gpsAlmanac && gpsAlmanac[prn];
+        const pre = `alm${prn}_`;
+        if (a) {
+            extras[pre + 'e']         = a.e || 0;
+            extras[pre + 'sqrt_a']    = a.sqrt_a || 0;
+            extras[pre + 'omega0']    = (a.omega0_deg || 0) / 180;       // semicircles
+            extras[pre + 'omega']     = (a.omega_deg || 0) / 180;
+            extras[pre + 'm0']        = (a.m0_deg || 0) / 180;
+            extras[pre + 'delta_i']   = ((a.inc_deg || 54) - 54) / 180;  // δi from 54° reference
+            extras[pre + 'omega_dot'] = -2.5e-9 / Math.PI;               // ~nominal
+            extras[pre + 'toa']       = a.toa || 0;
+            extras[pre + 'health']    = a.health || 0;
+            extras[pre + 'af0']       = 0;
+            extras[pre + 'af1']       = 0;
+        } else {
+            ['e','sqrt_a','omega0','omega','m0','delta_i','omega_dot','toa','health','af0','af1'].forEach(f => extras[pre + f] = 0);
+        }
+        extras['h' + prn] = (a && a.health) || 0;
+    }
+    extras.alm_toa = 0; extras.alm_wn = 0;
+    // AS flags packed (4 bits per SV × 32 SVs = 128 bits across 6 words)
+    // Real data not in RINEX; just mark all as 0 (no AS in effect).
+    for (let i = 3; i <= 8; i++) extras['as_flags_w' + i] = 0;
+    return extras;
+}
+
+function encodeSubframe(sfNum, vals, page) {
+    let fields;
+    if (sfNum === 4)      fields = buildSf4Page(page);
+    else if (sfNum === 5) fields = buildSf5Page(page);
+    else                  fields = LNAV_FIELDS[sfNum];
     const bits = new Array(300).fill(0);
     const labels = new Array(300).fill(null);
     for (const f of fields) {
@@ -2584,13 +2802,19 @@ function encodeSubframe(sfNum, vals) {
 }
 
 function renderLnavSubframes(e) {
-    const vals = buildLnavValues(e);
-    let html = '<div class="sd-section" id="sd-lnav-bits" style="grid-column:1/-1"><h4>BROADCAST BITS — LNAV (re-encoded, live TOW)</h4>';
-    html += '<div class="sf-hint">Each row is one 30-bit word. Hover any cell for the field name. Bits update each second — TOW count and the active-subframe highlight follow GPS time. Parity bits dimmed (Hamming-computed live by a real receiver).</div>';
-    for (const sf of [1, 2, 3]) {
-        const { bits, labels, fields } = encodeSubframe(sf, vals);
-        const sfTitle = { 1: 'Subframe 1 — Clock & SV health', 2: 'Subframe 2 — Ephemeris I', 3: 'Subframe 3 — Ephemeris II' }[sf];
-        html += `<div class="sf-block" id="sf-block-${sf}"><div class="sf-title">${sfTitle} <span class="sf-live" id="sf-live-${sf}">— · in queue</span></div><div class="sf-grid">`;
+    const vals = Object.assign({}, buildLnavValues(e), buildLnavExtras());
+    window._lastLnavValues = vals;
+    let html = '<div class="sd-section" id="sd-lnav-bits" style="grid-column:1/-1"><h4>BROADCAST BITS — LNAV (re-encoded, live)</h4>';
+    html += '<div class="sf-hint">Each row is one 30-bit word. Hover any cell for the field name. Bits update each second — TOW + active-subframe highlight track GPS time; subframes 4 & 5 cycle through their 25 pages every 12.5 minutes (one page per 30 s frame). Parity bits dimmed.</div>';
+    const initialPage4 = currentSfPage(4);
+    const initialPage5 = currentSfPage(5);
+    for (const sf of [1, 2, 3, 4, 5]) {
+        const page = sf === 4 ? initialPage4 : sf === 5 ? initialPage5 : null;
+        const { bits, labels, fields } = encodeSubframe(sf, vals, page);
+        const sfTitle = { 1: 'Subframe 1 — Clock & SV health', 2: 'Subframe 2 — Ephemeris I', 3: 'Subframe 3 — Ephemeris II',
+                          4: `Subframe 4 — Page ${page} (${sf4PageDesc(page)})`,
+                          5: `Subframe 5 — Page ${page} (${sf5PageDesc(page)})` }[sf];
+        html += `<div class="sf-block" id="sf-block-${sf}" data-sf="${sf}"><div class="sf-title" id="sf-title-${sf}">${sfTitle} <span class="sf-live" id="sf-live-${sf}">— · in queue</span></div><div class="sf-grid" id="sf-grid-${sf}">`;
         for (let w = 0; w < 10; w++) {
             html += `<div class="sf-word"><div class="sf-wnum">W${w+1}</div>`;
             for (let b = 0; b < 30; b++) {
@@ -2612,31 +2836,51 @@ function renderLnavSubframes(e) {
     return html;
 }
 
-// Patch the TOW bits + active-subframe highlight every second.
-// TOW count = next subframe's start-of-week seconds / 6, in 17 bits.
-// Frame cycles SF1→SF2→SF3→SF4→SF5 every 30 s (6 s per subframe).
+// Page advances per 30s frame. 25-page cycle = 12.5 min.
+function currentSfPage(sf) {
+    const nowMs = frozenTime || Date.now();
+    const secOfWeek = Math.floor((nowMs / 1000) - 315964800) % 604800;
+    const frameNum = Math.floor(secOfWeek / 30);
+    return (frameNum % 25) + 1;
+}
+function sf4PageDesc(p) {
+    if (SF4_KIND[p]) return SF4_KIND[p];
+    if ([2,3,4,5,7,8,9,10].includes(p)) return `almanac SV ${SF4_SVID[p]}`;
+    return 'reserved';
+}
+function sf5PageDesc(p) {
+    if (p === 25) return 'health summary SV 1-24';
+    return `almanac SV ${p}`;
+}
+
+// Tracks last rendered SF4/SF5 page so we know when to fully re-render
+let _lastSfPage = { 4: null, 5: null };
+
 let lnavBitsTimer = null;
 function startLnavBitsTicker() {
     clearInterval(lnavBitsTimer);
+    _lastSfPage = { 4: currentSfPage(4), 5: currentSfPage(5) };
     lnavBitsTimer = setInterval(updateLnavBitsLive, 1000);
     updateLnavBitsLive();
 }
 function updateLnavBitsLive() {
-    if (!document.getElementById('sd-lnav-bits')) {
-        clearInterval(lnavBitsTimer);
-        return;
-    }
-    // GPS week-second from current (or frozen) time
+    const root = document.getElementById('sd-lnav-bits');
+    if (!root) { clearInterval(lnavBitsTimer); return; }
     const nowMs = frozenTime || Date.now();
     const secOfWeek = Math.floor((nowMs / 1000) - 315964800) % 604800;
-    // GPS week TOW counts the *next* subframe's z-count = SOW/6 + 1
     const tow17 = ((Math.floor(secOfWeek / 6) + 1) % 100800) & 0x1FFFF;
-    // Currently-broadcasting subframe: cycles 1..5 every 6s
     const activeSf = ((Math.floor(secOfWeek / 6)) % 5) + 1;
-    // Position within the 6-second subframe (0..5.999)
     const subSec = (secOfWeek % 6) + (nowMs / 1000 - Math.floor(nowMs / 1000));
-    for (const sf of [1, 2, 3]) {
-        // Patch the 17-bit TOW count (bits 30..46 inside the subframe)
+    // Detect SF4/SF5 page change → re-render that block in place
+    for (const sf of [4, 5]) {
+        const newPage = currentSfPage(sf);
+        if (newPage !== _lastSfPage[sf]) {
+            _lastSfPage[sf] = newPage;
+            rerenderSfPage(sf, newPage);
+        }
+    }
+    // Patch TOW + active highlight on every subframe
+    for (const sf of [1, 2, 3, 4, 5]) {
         for (let i = 0; i < 17; i++) {
             const bit = (tow17 >> (16 - i)) & 1;
             const cell = document.getElementById(`sfb-${sf}-${30 + i}`);
@@ -2644,14 +2888,41 @@ function updateLnavBitsLive() {
         }
         const block = document.getElementById(`sf-block-${sf}`);
         const live  = document.getElementById(`sf-live-${sf}`);
+        if (!block) continue;
         if (sf === activeSf) {
-            block && block.classList.add('sf-active');
-            live  && (live.textContent = `▶ broadcasting (${subSec.toFixed(1)}s / 6s)`);
+            block.classList.add('sf-active');
+            if (live) live.textContent = `▶ broadcasting (${subSec.toFixed(1)}s / 6s)`;
         } else {
-            block && block.classList.remove('sf-active');
+            block.classList.remove('sf-active');
             const distance = ((sf - activeSf + 5) % 5);
-            live  && (live.textContent = `· next in ${distance * 6 - subSec | 0}s`);
+            if (live) live.textContent = `· next in ${distance * 6 - subSec | 0}s`;
         }
+    }
+}
+
+// Re-encode SF4 or SF5 with the new page and patch its DOM in place
+function rerenderSfPage(sf, page) {
+    // Need the parsed ephemeris values that were used originally; rebuild from globals
+    const sat = spSatList[spCurrentIdx] && spSatList[spCurrentIdx].sat;
+    if (!sat || !window._lastLnavValues) return;
+    const vals = window._lastLnavValues;
+    const { bits, labels } = encodeSubframe(sf, vals, page);
+    for (let bi = 0; bi < 300; bi++) {
+        const cell = document.getElementById(`sfb-${sf}-${bi}`);
+        if (!cell) continue;
+        const lbl = labels[bi] || { name: '?', color: '#222' };
+        cell.style.background = lbl.color + (lbl.isParity ? '' : '');
+        cell.style.opacity = lbl.isParity ? '0.4' : '1';
+        cell.textContent = bits[bi];
+        cell.title = `${lbl.name} · bit ${bi}`;
+    }
+    const title = document.getElementById(`sf-title-${sf}`);
+    if (title) {
+        const desc = sf === 4 ? sf4PageDesc(page) : sf5PageDesc(page);
+        const main = `Subframe ${sf} — Page ${page} (${desc})`;
+        const live = document.getElementById(`sf-live-${sf}`);
+        title.firstChild.textContent = main + ' ';
+        title.appendChild(live);  // keep live span at the end
     }
 }
 
