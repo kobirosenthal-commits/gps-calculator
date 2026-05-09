@@ -3575,7 +3575,7 @@ function renderGalileoFnavBits(g) {
     return renderConstellationBitsSection({
         sysName: 'Galileo F/NAV (5 word types × 244 bits, E5a-I)',
         sysKey: 'galf', wordPrefix: 'WT',
-        bitsPerBlock: 244, bitsPerWord: 122, numBlocks: 5,
+        bitsPerBlock: 244, bitsPerWord: 61, numBlocks: 5,
         vals: buildGalileoFnavValues(g),
         blockTitle: i => ['Word 1 — Clock + SISA','Word 2 — Ephemeris (1/2)','Word 3 — Ephemeris (2/2)',
                           'Word 4 — Cic/Cis + i₀ + BGD + E5a health','Word 5 — GST + reserved'][i],
@@ -3589,7 +3589,7 @@ function renderGalileoBits(g) {
     return renderConstellationBitsSection({
         sysName: 'Galileo I/NAV (5 word types × 128 bits, E1-B / E5b-I)',
         sysKey: 'gal', wordPrefix: 'WT',
-        bitsPerBlock: 128, bitsPerWord: 64, numBlocks: 5,
+        bitsPerBlock: 128, bitsPerWord: 32, numBlocks: 5,
         vals: buildGalileoInavValues(g),
         blockTitle: i => ['Word 1 — Ephemeris (1/4)','Word 2 — Ephemeris (2/4)','Word 3 — Ephemeris (3/4) + SISA',
                           'Word 4 — Clock & SVID','Word 5 — Iono + BGD + GST'][i],
