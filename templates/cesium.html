@@ -298,6 +298,9 @@
             border-radius: 2px; cursor: help;
             overflow: hidden;
         }
+        /* Inset stripe at the leftmost cell of each new field — keeps colour
+           boundaries readable even when cells get squeezed on small screens. */
+        .sf-bit-bound { box-shadow: inset 1px 0 0 rgba(255,255,255,0.55); }
         @media (max-width: 1000px) { .sf-bit { height: 14px; line-height: 14px; font-size: 0.5em; } .sf-word { grid-template-columns: 24px 1fr; } }
         @media (max-width: 640px)  { .sf-bit { height: 12px; line-height: 12px; font-size: 0; } .sf-word { grid-template-columns: 20px 1fr; gap: 1px; } }
         .sf-block.sf-active .sf-grid { box-shadow: 0 0 0 2px #7ecfff; }
@@ -309,6 +312,13 @@
         @media (max-width: 1000px) {
             .sf-bit { width: 14px; height: 14px; min-width: 14px; line-height: 14px; font-size: 0.55em; }
             .sf-wnum { min-width: 22px; }
+        }
+        /* Phones: undo the 14 px floor so 25-bit rows actually fit a 360 px
+           viewport without horizontal overflow. The mobile JS wrap keeps the
+           per-row count low enough that 1fr columns stay ≥10 px. */
+        @media (max-width: 640px) {
+            .sf-bit { width: auto; min-width: 0; height: 13px; line-height: 13px; }
+            .sf-bit-bound { box-shadow: inset 1.5px 0 0 rgba(255,255,255,0.7); }
         }
         .sd-pending { color: #3a6a9a; font-size: 0.82em; padding: 10px 0 4px; display: flex; align-items: center; gap: 8px; }
         .sd-pending::before { content: ''; display: inline-block; width: 10px; height: 10px; border: 2px solid #1a3a5c; border-top-color: #5599cc; border-radius: 50%; animation: spin 1.2s linear infinite; flex-shrink: 0; }
@@ -3335,9 +3345,35 @@ function buildGalileoInavValues(g) {
 
 // Generic constellation bit-section render. Renders N words/strings/subframes
 // driven by a frame spec and returns the section HTML.
+// Phones can't fit 50/60-bit rows without squashing cells below ~6px.
+// Halve the wrap on small screens so each cell stays ~12-14px wide.
+const _BITS_MOBILE_MQ = (typeof window !== 'undefined' && window.matchMedia)
+    ? window.matchMedia('(max-width: 640px)') : null;
+function _isPhoneViewport() { return _BITS_MOBILE_MQ ? _BITS_MOBILE_MQ.matches : false; }
+function _mobileBitsPerWord(desktopBpw, blockBits) {
+    if (!_isPhoneViewport() || desktopBpw <= 32) return desktopBpw;
+    // Pick the largest split <= 32 that keeps row counts reasonable.
+    const target = Math.ceil(desktopBpw / 2);
+    return Math.min(target, 32);
+}
+// Re-render the satellite detail page when crossing the phone breakpoint so
+// dense bit decoders (GLONASS / CNAV / Galileo F-NAV) re-flow with the
+// mobile vs desktop wrap. Cheap: only fires on the threshold transition.
+if (_BITS_MOBILE_MQ && _BITS_MOBILE_MQ.addEventListener) {
+    _BITS_MOBILE_MQ.addEventListener('change', () => {
+        const page = document.getElementById('sat-page');
+        if (!page || !page.classList.contains('open')) return;
+        if (typeof spCurrentIdx !== 'number' || spCurrentIdx < 0) return;
+        const item = spSatList && spSatList[spCurrentIdx];
+        if (!item) return;
+        loadSpContent(satData[item.label] || item.sat);
+    });
+}
+
 // frameSpec = { sysName, totalBitsPerBlock, numBlocks, blockTitle(i),
 //               getFields(i), description }
 function renderConstellationBitsSection(spec) {
+    const bitsPerWord = _mobileBitsPerWord(spec.bitsPerWord, spec.bitsPerBlock);
     let html = `<div class="sd-section" id="sd-${spec.sysKey}-bits" style="grid-column:1/-1"><h4>BROADCAST BITS — ${spec.sysName}</h4>`;
     html += `<div class="sf-hint">${spec.description}</div>`;
     for (let i = 0; i < spec.numBlocks; i++) {
@@ -3361,25 +3397,33 @@ function renderConstellationBitsSection(spec) {
             _writeBits(bits, f.start, f.len, raw);
             for (let k = 0; k < f.len; k++) labels[f.start + k] = { name: f.name, color: f.color, isParity: f.isParity };
         }
-        const wordsPerBlock = Math.ceil(spec.bitsPerBlock / spec.bitsPerWord);
+        const wordsPerBlock = Math.ceil(spec.bitsPerBlock / bitsPerWord);
         const blockId = spec.liveTrack ? ` id="${spec.sysKey}-block-${i}"` : '';
         const liveSpan = spec.liveTrack
             ? ` <span class="sf-live" id="${spec.sysKey}-live-${i}">— · in queue</span>`
             : '';
+        // GPS/BeiDou keep "W1..W10" labels only when their native word count is
+        // intact; if the mobile wrap split them, fall back to bit-range labels.
+        const useWordLabels = spec.wordPrefix === 'W' && bitsPerWord === spec.bitsPerWord;
         html += `<div class="sf-block"${blockId}><div class="sf-title">${spec.blockTitle(i)}${liveSpan}</div><div class="sf-grid">`;
         for (let w = 0; w < wordsPerBlock; w++) {
-            const startBit = w * spec.bitsPerWord;
-            const endBit = Math.min(startBit + spec.bitsPerWord, spec.bitsPerBlock);
+            const startBit = w * bitsPerWord;
+            const endBit = Math.min(startBit + bitsPerWord, spec.bitsPerBlock);
             const cellCount = endBit - startBit;
             const wlabel = wordsPerBlock === 1
                 ? `${spec.wordPrefix}1`
-                : (spec.wordPrefix === 'W'
-                    ? `W${w + 1}`                       // GPS / BeiDou: 30-bit words named W1..W10
-                    : `${startBit + 1}-${endBit}`);     // GLONASS / Galileo: bit range
+                : (useWordLabels
+                    ? `W${w + 1}`
+                    : `${startBit + 1}-${endBit}`);
             html += `<div class="sf-word"><div class="sf-wnum">${wlabel}</div><div class="sf-word-cells" style="grid-template-columns:repeat(${cellCount}, minmax(0, 1fr))">`;
             for (let bi = startBit; bi < endBit; bi++) {
                 const lbl = labels[bi] || { name: '?', color: '#222' };
-                html += `<span class="sf-bit" style="background:${lbl.color}${lbl.isParity ? ';opacity:0.4' : ''}" title="${lbl.name} · bit ${bi}">${bits[bi]}</span>`;
+                const prev = bi > startBit ? labels[bi - 1] : null;
+                // Mark the first cell of every field so colour boundaries stay
+                // visible even when cells are squeezed to 6-7px on phones.
+                const isBoundary = bi > startBit && (!prev || prev.name !== lbl.name || prev.color !== lbl.color);
+                const cls = isBoundary ? 'sf-bit sf-bit-bound' : 'sf-bit';
+                html += `<span class="${cls}" style="background:${lbl.color}${lbl.isParity ? ';opacity:0.4' : ''}" title="${lbl.name} · bit ${bi}">${bits[bi]}</span>`;
             }
             html += '</div></div>';
         }
