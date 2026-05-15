@@ -1,43 +1,42 @@
      2.11           N: GPS NAV DATA                         RINEX VERSION / TYPE
-teqc  2019Feb25     CORS-ADM Account    20260515 21:45:02UTCPGM / RUN BY / DATE
+teqc  2019Feb25     CORS-ADM Account    20260515 22:45:01UTCPGM / RUN BY / DATE
 Linux 2.4.21-27.ELsmp|Opteron|gcc|Linux 64|=+               COMMENT
      2.10           N: GPS NAV DATA                         COMMENT
-rvacn.e(1404.07)                        2026-05-15T21:27 UTCCOMMENT
+rvacn.e(1404.07)                        2026-05-15T22:27 UTCCOMMENT
 This file contains the validated broadcast navigation       COMMENT
 messages from the following files:                          COMMENT
-aaaa1350.26n, abmf135u.26n, abpo135u.26n, albh135u.26n,     COMMENT
-alic135u.26n, areq135u.26n, baie135u.26n, brew135u.26n,     COMMENT
-brst135u.26n, brux135u.26n, bshm135u.26n, bucu135u.26n,     COMMENT
-cebr135u.26n, chpi135u.26n, chum135u.26n, chur135u.26n,     COMMENT
-ckis135u.26n, coco135u.26n, cro1135u.26n, darw135u.26n,     COMMENT
-dav1135u.26n, dgar135u.26n, djig135u.26n, dlf1135u.26n,     COMMENT
-drao135u.26n, dubo135u.26n, ebre135u.26n, fair135u.26n,     COMMENT
-falk135u.26n, flin135u.26n, glps135u.26n, gode135u.26n,     COMMENT
-guam135u.26n, harb135u.26n, hers135u.26n, hlfx135u.26n,     COMMENT
-hob2135u.26n, hofn135u.26n, holb135u.26n, hrao135u.26n,     COMMENT
-iisc135u.26n, iqal135u.26n, ista135u.26n, joze135u.26n,     COMMENT
-jplm135u.26n, karr135u.26n, kat1135u.26n, kiri135u.26n,     COMMENT
-kiru135u.26n, kokb135u.26n, koug135u.26n, kour135u.26n,     COMMENT
-lmmf135u.26n, lpal135u.26n, m0se135u.26n, mac1135u.26n,     COMMENT
-maju135u.26n, mal2135u.26n, mar6135u.26n, mas1135u.26n,     COMMENT
-mat1135u.26n, mate135u.26n, maw1135u.26n, mcm4135u.26n,     COMMENT
-mdo1135u.26n, medi135u.26n, met3135u.26n, mkea135u.26n,     COMMENT
-mobs135u.26n, mro1135u.26n, nain135u.26n, nano135u.26n,     COMMENT
-naur135u.26n, nico135u.26n, nklg135u.26n, nlib135u.26n,     COMMENT
-nnor135u.26n, not1135u.26n, nrc1135u.26n, onsa135u.26n,     COMMENT
-orid135u.26n, palm135u.26n, pert135u.26n, picl135u.26n,     COMMENT
-pie1135u.26n, pimo135u.26n, pohn135u.26n, prds135u.26n,     COMMENT
-ptvl135u.26n, qaq1135u.26n, qiki135u.26n, reso135u.26n,     COMMENT
-reun135u.26n, reyk135u.26n, riga135u.26n, sant135u.26n,     COMMENT
-sask135u.26n, sch2135u.26n, scor135u.26n, seyg135u.26n,     COMMENT
-solo135u.26n, stj3135u.26n, stjo135u.26n, stpm135u.26n,     COMMENT
-suth135u.26n, suwn135u.26n, sydn135u.26n, thtg135u.26n,     COMMENT
-thu2135u.26n, tid1135u.26n, tow2135u.26n, tuva135u.26n,     COMMENT
-unbj135u.26n, usud135u.26n, vacs135u.26n, vald135u.26n,     COMMENT
-vill135u.26n, vis0135u.26n, warn135u.26n, whit135u.26n,     COMMENT
-will135u.26n, wsrt135u.26n, wtzr135u.26n, xmis135u.26n,     COMMENT
-yar2135u.26n, yarr135u.26n, yebe135u.26n, yell135u.26n,     COMMENT
-zim2135u.26n, zimm135u.26n                                  COMMENT
+aaaa1350.26n, abpo135v.26n, albh135v.26n, alic135v.26n,     COMMENT
+areq135v.26n, baie135v.26n, brew135v.26n, brst135v.26n,     COMMENT
+brux135v.26n, bshm135v.26n, bucu135v.26n, cebr135v.26n,     COMMENT
+chpi135v.26n, chum135v.26n, chur135v.26n, ckis135v.26n,     COMMENT
+coco135v.26n, cro1135v.26n, darw135v.26n, dav1135v.26n,     COMMENT
+dgar135v.26n, dlf1135v.26n, drao135v.26n, dubo135v.26n,     COMMENT
+ebre135v.26n, fair135v.26n, falk135v.26n, flin135v.26n,     COMMENT
+glps135v.26n, gode135v.26n, guam135v.26n, harb135v.26n,     COMMENT
+hers135v.26n, hlfx135v.26n, hob2135v.26n, hofn135v.26n,     COMMENT
+holb135v.26n, hrao135v.26n, iisc135v.26n, iqal135v.26n,     COMMENT
+ista135v.26n, joze135v.26n, jplm135v.26n, karr135v.26n,     COMMENT
+kat1135v.26n, kiri135v.26n, kiru135v.26n, kokb135v.26n,     COMMENT
+koug135v.26n, kour135v.26n, lmmf135v.26n, lpal135v.26n,     COMMENT
+m0se135v.26n, mac1135v.26n, maju135v.26n, mal2135v.26n,     COMMENT
+mar6135v.26n, mas1135v.26n, mat1135v.26n, mate135v.26n,     COMMENT
+maw1135v.26n, mcm4135v.26n, mdo1135v.26n, medi135v.26n,     COMMENT
+met3135v.26n, mkea135v.26n, mobs135v.26n, mro1135v.26n,     COMMENT
+nain135v.26n, nano135v.26n, naur135v.26n, nico135v.26n,     COMMENT
+nklg135v.26n, nlib135v.26n, nnor135v.26n, not1135v.26n,     COMMENT
+nrc1135v.26n, onsa135v.26n, orid135v.26n, palm135v.26n,     COMMENT
+pert135v.26n, picl135v.26n, pie1135v.26n, pimo135v.26n,     COMMENT
+pohn135v.26n, prds135v.26n, ptvl135v.26n, qaq1135v.26n,     COMMENT
+qiki135v.26n, reso135v.26n, reun135v.26n, reyk135v.26n,     COMMENT
+riga135v.26n, sant135v.26n, sask135v.26n, sch2135v.26n,     COMMENT
+scor135v.26n, seyg135v.26n, solo135v.26n, stj3135v.26n,     COMMENT
+stjo135v.26n, stpm135v.26n, suth135v.26n, suwn135v.26n,     COMMENT
+sydn135v.26n, thtg135v.26n, thu2135v.26n, tid1135v.26n,     COMMENT
+tow2135v.26n, tuva135v.26n, unbj135v.26n, usud135v.26n,     COMMENT
+vacs135v.26n, vald135v.26n, vill135v.26n, vis0135v.26n,     COMMENT
+warn135v.26n, whit135v.26n, will135v.26n, wsrt135v.26n,     COMMENT
+wtzr135v.26n, xmis135v.26n, yar2135v.26n, yarr135v.26n,     COMMENT
+yebe135v.26n, yell135v.26n, zim2135v.26n, zimm135v.26n      COMMENT
     1.1180D-08  2.2350D-08 -5.9600D-08 -1.1920D-07          ION ALPHA
     9.8300D+04  1.3110D+05 -1.3110D+05 -5.8980D+05          ION BETA
     1.862645149230D-09 1.776356839400D-15    61440     2419 DELTA-UTC: A0,A1,T,W
