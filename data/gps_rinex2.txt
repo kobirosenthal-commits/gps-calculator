@@ -1,43 +1,43 @@
      2.11           N: GPS NAV DATA                         RINEX VERSION / TYPE
-teqc  2019Feb25     CORS-ADM Account    20260524 17:45:01UTCPGM / RUN BY / DATE
+teqc  2019Feb25     CORS-ADM Account    20260524 18:45:01UTCPGM / RUN BY / DATE
 Linux 2.4.21-27.ELsmp|Opteron|gcc|Linux 64|=+               COMMENT
      2.10           N: GPS NAV DATA                         COMMENT
-rvacn.e(1404.07)                        2026-05-24T17:27 UTCCOMMENT
+rvacn.e(1404.07)                        2026-05-24T18:27 UTCCOMMENT
 This file contains the validated broadcast navigation       COMMENT
 messages from the following files:                          COMMENT
-aaaa1440.26n, abmf144q.26n, abpo144q.26n, albh144q.26n,     COMMENT
-alic144q.26n, areq144q.26n, baie144q.26n, bake144q.26n,     COMMENT
-brew144q.26n, brst144q.26n, brux144q.26n, bshm144q.26n,     COMMENT
-bucu144q.26n, cebr144q.26n, chpi144q.26n, chum144q.26n,     COMMENT
-chur144q.26n, ckis144q.26n, coco144q.26n, cro1144q.26n,     COMMENT
-darw144q.26n, dav1144q.26n, dgar144q.26n, djig144q.26n,     COMMENT
-dlf1144q.26n, drao144q.26n, dubo144q.26n, ebre144q.26n,     COMMENT
-fair144q.26n, falk144q.26n, flin144q.26n, glps144q.26n,     COMMENT
-glsv144q.26n, gode144q.26n, guam144q.26n, harb144q.26n,     COMMENT
-hers144q.26n, hlfx144q.26n, hob2144q.26n, hofn144q.26n,     COMMENT
-holb144q.26n, hrao144q.26n, iisc144q.26n, iqal144q.26n,     COMMENT
-ista144q.26n, joze144q.26n, jplm144q.26n, karr144q.26n,     COMMENT
-kat1144q.26n, kiri144q.26n, kiru144q.26n, kokb144q.26n,     COMMENT
-koug144q.26n, kour144q.26n, lmmf144q.26n, lpal144q.26n,     COMMENT
-m0se144q.26n, mac1144q.26n, maju144q.26n, mal2144q.26n,     COMMENT
-mar6144q.26n, mas1144q.26n, mat1144q.26n, mate144q.26n,     COMMENT
-maw1144q.26n, mcm4144q.26n, mdo1144q.26n, medi144q.26n,     COMMENT
-met3144q.26n, mkea144q.26n, mobs144q.26n, mro1144q.26n,     COMMENT
-nain144q.26n, nano144q.26n, naur144q.26n, nico144q.26n,     COMMENT
-nklg144q.26n, nlib144q.26n, nnor144q.26n, not1144q.26n,     COMMENT
-nrc1144q.26n, onsa144q.26n, orid144q.26n, palm144q.26n,     COMMENT
-pert144q.26n, picl144q.26n, pie1144q.26n, pimo144q.26n,     COMMENT
-pohn144q.26n, prds144q.26n, ptvl144q.26n, qaq1144q.26n,     COMMENT
-qiki144q.26n, reso144q.26n, reun144q.26n, reyk144q.26n,     COMMENT
-riga144q.26n, sant144q.26n, sask144q.26n, sch2144q.26n,     COMMENT
-scor144q.26n, seyg144q.26n, solo144q.26n, stj3144q.26n,     COMMENT
-stjo144q.26n, stpm144q.26n, suth144q.26n, suwn144q.26n,     COMMENT
-sydn144q.26n, thtg144q.26n, thu2144q.26n, tid1144q.26n,     COMMENT
-tow2144q.26n, tuva144q.26n, unbj144q.26n, usud144q.26n,     COMMENT
-vacs144q.26n, vald144q.26n, vill144q.26n, vis0144q.26n,     COMMENT
-warn144q.26n, whit144q.26n, will144q.26n, wsrt144q.26n,     COMMENT
-wtzr144q.26n, xmis144q.26n, yar2144q.26n, yarr144q.26n,     COMMENT
-yebe144q.26n, yell144q.26n, zim2144q.26n, zimm144q.26n      COMMENT
+aaaa1440.26n, abmf144r.26n, abpo144r.26n, albh144r.26n,     COMMENT
+alic144r.26n, areq144r.26n, baie144r.26n, bake144r.26n,     COMMENT
+brew144r.26n, brst144r.26n, brux144r.26n, bshm144r.26n,     COMMENT
+bucu144r.26n, cebr144r.26n, chpi144r.26n, chum144r.26n,     COMMENT
+chur144r.26n, ckis144r.26n, coco144r.26n, cro1144r.26n,     COMMENT
+darw144r.26n, dav1144r.26n, dgar144r.26n, djig144r.26n,     COMMENT
+dlf1144r.26n, drao144r.26n, dubo144r.26n, ebre144r.26n,     COMMENT
+fair144r.26n, falk144r.26n, flin144r.26n, glps144r.26n,     COMMENT
+glsv144r.26n, gode144r.26n, guam144r.26n, harb144r.26n,     COMMENT
+hers144r.26n, hlfx144r.26n, hob2144r.26n, hofn144r.26n,     COMMENT
+holb144r.26n, hrao144r.26n, iisc144r.26n, iqal144r.26n,     COMMENT
+ista144r.26n, joze144r.26n, jplm144r.26n, karr144r.26n,     COMMENT
+kat1144r.26n, kiru144r.26n, kokb144r.26n, koug144r.26n,     COMMENT
+kour144r.26n, lmmf144r.26n, lpal144r.26n, m0se144r.26n,     COMMENT
+mac1144r.26n, mal2144r.26n, mar6144r.26n, mas1144r.26n,     COMMENT
+mat1144r.26n, mate144r.26n, maw1144r.26n, mcm4144r.26n,     COMMENT
+mdo1144r.26n, medi144r.26n, met3144r.26n, mkea144r.26n,     COMMENT
+mobs144r.26n, mro1144r.26n, nain144r.26n, nano144r.26n,     COMMENT
+naur144r.26n, nico144r.26n, nklg144r.26n, nlib144r.26n,     COMMENT
+nnor144r.26n, not1144r.26n, nrc1144r.26n, onsa144r.26n,     COMMENT
+orid144r.26n, palm144r.26n, pert144r.26n, picl144r.26n,     COMMENT
+pie1144r.26n, pimo144r.26n, pohn144r.26n, prds144r.26n,     COMMENT
+ptvl144r.26n, qaq1144r.26n, qiki144r.26n, reso144r.26n,     COMMENT
+reun144r.26n, reyk144r.26n, riga144r.26n, sant144r.26n,     COMMENT
+sask144r.26n, sch2144r.26n, scor144r.26n, seyg144r.26n,     COMMENT
+solo144r.26n, stj3144r.26n, stjo144r.26n, stpm144r.26n,     COMMENT
+suth144r.26n, suwn144r.26n, sydn144r.26n, thtg144r.26n,     COMMENT
+thu2144r.26n, tid1144r.26n, tow2144r.26n, tuva144r.26n,     COMMENT
+unbj144r.26n, usud144r.26n, vacs144r.26n, vald144r.26n,     COMMENT
+vill144r.26n, vis0144r.26n, warn144r.26n, whit144r.26n,     COMMENT
+will144r.26n, wsrt144r.26n, wtzr144r.26n, xmis144r.26n,     COMMENT
+yar2144r.26n, yarr144r.26n, yebe144r.26n, yell144r.26n,     COMMENT
+zim2144r.26n, zimm144r.26n                                  COMMENT
     1.5830D-08  2.2350D-08 -1.1920D-07 -1.1920D-07          ION ALPHA
     1.1470D+05  1.4750D+05 -1.3110D+05 -4.5880D+05          ION BETA
    -1.862645149230D-09-3.552713678800D-15   233472     2420 DELTA-UTC: A0,A1,T,W
