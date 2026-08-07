@@ -1,44 +1,43 @@
      2.11           N: GPS NAV DATA                         RINEX VERSION / TYPE
-teqc  2019Feb25     CORS-ADM Account    20260807 03:45:02UTCPGM / RUN BY / DATE
+teqc  2019Feb25     CORS-ADM Account    20260807 04:45:01UTCPGM / RUN BY / DATE
 Linux 2.4.21-27.ELsmp|Opteron|gcc|Linux 64|=+               COMMENT
      2.10           N: GPS NAV DATA                         COMMENT
-rvacn.e(1404.07)                        2026-08-07T03:27 UTCCOMMENT
+rvacn.e(1404.07)                        2026-08-07T04:26 UTCCOMMENT
 This file contains the validated broadcast navigation       COMMENT
 messages from the following files:                          COMMENT
-aaaa2190.26n, abpo219c.26n, albh219c.26n, alic219c.26n,     COMMENT
-areq219c.26n, baie219c.26n, bake219c.26n, brew219c.26n,     COMMENT
-brst219c.26n, brux219c.26n, bshm219c.26n, bucu219c.26n,     COMMENT
-cebr219c.26n, cedu219c.26n, chpi219c.26n, chum219c.26n,     COMMENT
-chur219c.26n, ckis219c.26n, coco219c.26n, cro1219c.26n,     COMMENT
-darw219c.26n, dav1219c.26n, dgar219c.26n, dlf1219c.26n,     COMMENT
-drao219c.26n, dubo219c.26n, dyng219c.26n, faa1219c.26n,     COMMENT
-fair219c.26n, falk219c.26n, flin219c.26n, glps219c.26n,     COMMENT
-glsv219c.26n, gode219c.26n, guam219c.26n, harb219c.26n,     COMMENT
-hers219c.26n, hlfx219c.26n, hob2219c.26n, hofn219c.26n,     COMMENT
-holb219c.26n, hrao219c.26n, iisc219c.26n, iqal219c.26n,     COMMENT
-ista219c.26n, joze219c.26n, jplm219c.26n, karr219c.26n,     COMMENT
-kat1219c.26n, kiri219c.26n, kiru219c.26n, kokb219c.26n,     COMMENT
-koug219c.26n, kour219c.26n, laut219c.26n, lmmf219c.26n,     COMMENT
-lpal219c.26n, m0se219c.26n, mac1219c.26n, maju219c.26n,     COMMENT
-mal2219c.26n, mar6219c.26n, mas1219c.26n, mat1219c.26n,     COMMENT
-mate219c.26n, maw1219c.26n, mcm4219c.26n, mdo1219c.26n,     COMMENT
-medi219c.26n, met3219c.26n, mkea219c.26n, mobs219c.26n,     COMMENT
-mro1219c.26n, nain219c.26n, nano219c.26n, naur219c.26n,     COMMENT
-nico219c.26n, nium219c.26n, nklg219c.26n, nlib219c.26n,     COMMENT
-nnor219c.26n, not1219c.26n, nrc1219c.26n, ohi2219c.26n,     COMMENT
-onsa219c.26n, palm219c.26n, pert219c.26n, picl219c.26n,     COMMENT
-pie1219c.26n, pimo219c.26n, pohn219c.26n, prds219c.26n,     COMMENT
-ptvl219c.26n, qaq1219c.26n, qiki219c.26n, reso219c.26n,     COMMENT
-reun219c.26n, reyk219c.26n, riga219c.26n, sant219c.26n,     COMMENT
-sask219c.26n, sch2219c.26n, scor219c.26n, seyg219c.26n,     COMMENT
-solo219c.26n, stj3219c.26n, stjo219c.26n, stpm219c.26n,     COMMENT
-suth219c.26n, suwn219c.26n, sydn219c.26n, thtg219c.26n,     COMMENT
-thu2219c.26n, tid1219c.26n, tow2219c.26n, tuva219c.26n,     COMMENT
-unbj219c.26n, usud219c.26n, vacs219c.26n, vald219c.26n,     COMMENT
-vill219c.26n, vis0219c.26n, warn219c.26n, whit219c.26n,     COMMENT
-will219c.26n, wsrt219c.26n, wtzr219c.26n, xmis219c.26n,     COMMENT
-yar2219c.26n, yarr219c.26n, yebe219c.26n, yell219c.26n,     COMMENT
-zim2219c.26n, zimm219c.26n                                  COMMENT
+aaaa2190.26n, abpo219d.26n, albh219d.26n, alic219d.26n,     COMMENT
+areq219d.26n, baie219d.26n, bake219d.26n, brew219d.26n,     COMMENT
+brst219d.26n, brux219d.26n, bshm219d.26n, bucu219d.26n,     COMMENT
+cebr219d.26n, cedu219d.26n, chpi219d.26n, chum219d.26n,     COMMENT
+chur219d.26n, ckis219d.26n, coco219d.26n, cro1219d.26n,     COMMENT
+darw219d.26n, dav1219d.26n, dgar219d.26n, dlf1219d.26n,     COMMENT
+drao219d.26n, dubo219d.26n, dyng219d.26n, faa1219d.26n,     COMMENT
+fair219d.26n, falk219d.26n, flin219d.26n, glps219d.26n,     COMMENT
+glsv219d.26n, gode219d.26n, guam219d.26n, harb219d.26n,     COMMENT
+hers219d.26n, hlfx219d.26n, hob2219d.26n, hofn219d.26n,     COMMENT
+holb219d.26n, hrao219d.26n, iisc219d.26n, iqal219d.26n,     COMMENT
+ista219d.26n, joze219d.26n, jplm219d.26n, karr219d.26n,     COMMENT
+kiri219d.26n, kiru219d.26n, kokb219d.26n, koug219d.26n,     COMMENT
+kour219d.26n, laut219d.26n, lmmf219d.26n, lpal219d.26n,     COMMENT
+m0se219d.26n, mac1219d.26n, maju219d.26n, mal2219d.26n,     COMMENT
+mar6219d.26n, mas1219d.26n, mat1219d.26n, mate219d.26n,     COMMENT
+maw1219d.26n, mcm4219d.26n, mdo1219d.26n, medi219d.26n,     COMMENT
+met3219d.26n, mkea219d.26n, mobs219d.26n, mro1219d.26n,     COMMENT
+nain219d.26n, nano219d.26n, naur219d.26n, nico219d.26n,     COMMENT
+nium219d.26n, nklg219d.26n, nlib219d.26n, nnor219d.26n,     COMMENT
+not1219d.26n, nrc1219d.26n, ohi2219d.26n, onsa219d.26n,     COMMENT
+palm219d.26n, pert219d.26n, picl219d.26n, pie1219d.26n,     COMMENT
+pimo219d.26n, pohn219d.26n, prds219d.26n, ptvl219d.26n,     COMMENT
+qaq1219d.26n, qiki219d.26n, reso219d.26n, reun219d.26n,     COMMENT
+reyk219d.26n, riga219d.26n, sant219d.26n, sask219d.26n,     COMMENT
+sch2219d.26n, scor219d.26n, seyg219d.26n, solo219d.26n,     COMMENT
+stj3219d.26n, stjo219d.26n, stpm219d.26n, suth219d.26n,     COMMENT
+suwn219d.26n, sydn219d.26n, thtg219d.26n, thu2219d.26n,     COMMENT
+tid1219d.26n, tow2219d.26n, tuva219d.26n, unbj219d.26n,     COMMENT
+usud219d.26n, vacs219d.26n, vald219d.26n, vill219d.26n,     COMMENT
+vis0219d.26n, warn219d.26n, whit219d.26n, will219d.26n,     COMMENT
+wsrt219d.26n, wtzr219d.26n, xmis219d.26n, yar2219d.26n,     COMMENT
+yebe219d.26n, yell219d.26n, zim2219d.26n, zimm219d.26n      COMMENT
     7.4510D-09  1.4900D-08 -5.9600D-08 -1.1920D-07          ION ALPHA
     9.2160D+04  1.3110D+05 -6.5540D+04 -5.8980D+05          ION BETA
    -3.725290298460D-09-1.065814103640D-14    61440     2431 DELTA-UTC: A0,A1,T,W
@@ -1027,3 +1026,11 @@ zim2219c.26n, zimm219c.26n                                  COMMENT
     1.567922453121D-10 1.000000000000D+00 2.430000000000D+03 0.000000000000D+00
     2.000000000000D+00 0.000000000000D+00-1.350417733192D-08 9.900000000000D+01
     4.416360000000D+05 4.000000000000D+00
+ 1 26  8  7  4 59 44.0 2.031126059592D-04-9.436007530894D-12 0.000000000000D+00
+    2.010000000000D+02 1.615625000000D+01 4.733411451301D-09 2.042597905259D-03
+    6.388872861862D-07 1.847595209256D-03 2.125278115273D-06 5.153600013733D+03
+    4.499840000000D+05-1.490116119385D-08 3.765568808084D-01 8.754432201385D-08
+    9.570585185860D-01 3.344687500000D+02 1.744447213171D-01-8.462852511776D-09
+   -1.971510692762D-10 1.000000000000D+00 2.430000000000D+03 0.000000000000D+00
+    2.000000000000D+00 0.000000000000D+00-8.847564458847D-09 9.690000000000D+02
+    4.428180000000D+05 4.000000000000D+00
