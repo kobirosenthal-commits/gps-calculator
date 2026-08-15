@@ -1,43 +1,42 @@
      2.11           N: GPS NAV DATA                         RINEX VERSION / TYPE
-teqc  2019Feb25     CORS-ADM Account    20260815 17:45:01UTCPGM / RUN BY / DATE
+teqc  2019Feb25     CORS-ADM Account    20260815 18:45:01UTCPGM / RUN BY / DATE
 Linux 2.4.21-27.ELsmp|Opteron|gcc|Linux 64|=+               COMMENT
      2.10           N: GPS NAV DATA                         COMMENT
-rvacn.e(1404.07)                        2026-08-15T17:26 UTCCOMMENT
+rvacn.e(1404.07)                        2026-08-15T18:26 UTCCOMMENT
 This file contains the validated broadcast navigation       COMMENT
 messages from the following files:                          COMMENT
-aaaa2270.26n, abmf227q.26n, abpo227q.26n, albh227q.26n,     COMMENT
-alic227q.26n, areq227q.26n, baie227q.26n, bake227q.26n,     COMMENT
-brew227q.26n, brst227q.26n, brux227q.26n, bshm227q.26n,     COMMENT
-bucu227q.26n, cebr227q.26n, cedu227q.26n, chpi227q.26n,     COMMENT
-chum227q.26n, chur227q.26n, ckis227q.26n, coco227q.26n,     COMMENT
-cro1227q.26n, darw227q.26n, dav1227q.26n, dgar227q.26n,     COMMENT
-djig227q.26n, dlf1227q.26n, drao227q.26n, dubo227q.26n,     COMMENT
-dyng227q.26n, ebre227q.26n, faa1227q.26n, fair227q.26n,     COMMENT
-falk227q.26n, flin227q.26n, glps227q.26n, gode227q.26n,     COMMENT
-guam227q.26n, harb227q.26n, hlfx227q.26n, hob2227q.26n,     COMMENT
-hofn227q.26n, holb227q.26n, hrao227q.26n, iisc227q.26n,     COMMENT
-iqal227q.26n, ista227q.26n, jplm227q.26n, karr227q.26n,     COMMENT
-kat1227q.26n, kiri227q.26n, kiru227q.26n, kokb227q.26n,     COMMENT
-koug227q.26n, kour227q.26n, laut227q.26n, lmmf227q.26n,     COMMENT
-lpal227q.26n, mac1227q.26n, maju227q.26n, mal2227q.26n,     COMMENT
-mar6227q.26n, mas1227q.26n, mat1227q.26n, mate227q.26n,     COMMENT
-maw1227q.26n, mcm4227q.26n, mdo1227q.26n, medi227q.26n,     COMMENT
-met3227q.26n, mkea227q.26n, mobs227q.26n, mro1227q.26n,     COMMENT
-nain227q.26n, nano227q.26n, naur227q.26n, nium227q.26n,     COMMENT
-nklg227q.26n, nlib227q.26n, nnor227q.26n, not1227q.26n,     COMMENT
-nrc1227q.26n, palm227q.26n, pert227q.26n, picl227q.26n,     COMMENT
-pie1227q.26n, pimo227q.26n, pohn227q.26n, prds227q.26n,     COMMENT
-ptvl227q.26n, qaq1227q.26n, qiki227q.26n, reso227q.26n,     COMMENT
-reun227q.26n, reyk227q.26n, riga227q.26n, sant227q.26n,     COMMENT
-sask227q.26n, sch2227q.26n, scor227q.26n, seyg227q.26n,     COMMENT
-solo227q.26n, stj3227q.26n, stjo227q.26n, stpm227q.26n,     COMMENT
-suth227q.26n, suwn227q.26n, sydn227q.26n, thtg227q.26n,     COMMENT
-thu2227q.26n, tid1227q.26n, tow2227q.26n, tuva227q.26n,     COMMENT
-unbj227q.26n, usud227q.26n, vacs227q.26n, vald227q.26n,     COMMENT
-vill227q.26n, warn227q.26n, whit227q.26n, will227q.26n,     COMMENT
-wsrt227q.26n, wtzr227q.26n, xmis227q.26n, yar2227q.26n,     COMMENT
-yarr227q.26n, yebe227q.26n, yell227q.26n, zim2227q.26n,     COMMENT
-zimm227q.26n                                                COMMENT
+aaaa2270.26n, abmf227r.26n, abpo227r.26n, albh227r.26n,     COMMENT
+alic227r.26n, areq227r.26n, baie227r.26n, bake227r.26n,     COMMENT
+brew227r.26n, brst227r.26n, brux227r.26n, bshm227r.26n,     COMMENT
+bucu227r.26n, cebr227r.26n, cedu227r.26n, chpi227r.26n,     COMMENT
+chum227r.26n, chur227r.26n, ckis227r.26n, coco227r.26n,     COMMENT
+cro1227r.26n, darw227r.26n, dav1227r.26n, dgar227r.26n,     COMMENT
+djig227r.26n, dlf1227r.26n, drao227r.26n, dubo227r.26n,     COMMENT
+dyng227r.26n, ebre227r.26n, faa1227r.26n, fair227r.26n,     COMMENT
+falk227r.26n, flin227r.26n, glps227r.26n, gode227r.26n,     COMMENT
+guam227r.26n, harb227r.26n, hlfx227r.26n, hob2227r.26n,     COMMENT
+hofn227r.26n, holb227r.26n, hrao227r.26n, iisc227r.26n,     COMMENT
+iqal227r.26n, ista227r.26n, jplm227r.26n, karr227r.26n,     COMMENT
+kat1227r.26n, kiri227r.26n, kiru227r.26n, kokb227r.26n,     COMMENT
+koug227r.26n, kour227r.26n, laut227r.26n, lmmf227r.26n,     COMMENT
+lpal227r.26n, mac1227r.26n, mal2227r.26n, mar6227r.26n,     COMMENT
+mas1227r.26n, mat1227r.26n, mate227r.26n, maw1227r.26n,     COMMENT
+mcm4227r.26n, mdo1227r.26n, medi227r.26n, met3227r.26n,     COMMENT
+mkea227r.26n, mobs227r.26n, mro1227r.26n, nain227r.26n,     COMMENT
+nano227r.26n, naur227r.26n, nium227r.26n, nklg227r.26n,     COMMENT
+nlib227r.26n, nnor227r.26n, not1227r.26n, nrc1227r.26n,     COMMENT
+palm227r.26n, pert227r.26n, picl227r.26n, pie1227r.26n,     COMMENT
+pimo227r.26n, pohn227r.26n, prds227r.26n, ptvl227r.26n,     COMMENT
+qaq1227r.26n, qiki227r.26n, reso227r.26n, reyk227r.26n,     COMMENT
+riga227r.26n, sant227r.26n, sask227r.26n, sch2227r.26n,     COMMENT
+scor227r.26n, seyg227r.26n, solo227r.26n, stj3227r.26n,     COMMENT
+stjo227r.26n, stpm227r.26n, suth227r.26n, suwn227r.26n,     COMMENT
+sydn227r.26n, thtg227r.26n, thu2227r.26n, tow2227r.26n,     COMMENT
+tuva227r.26n, unbj227r.26n, usud227r.26n, vacs227r.26n,     COMMENT
+vald227r.26n, vill227r.26n, warn227r.26n, whit227r.26n,     COMMENT
+will227r.26n, wsrt227r.26n, wtzr227r.26n, xmis227r.26n,     COMMENT
+yar2227r.26n, yarr227r.26n, yebe227r.26n, yell227r.26n,     COMMENT
+zim2227r.26n, zimm227r.26n                                  COMMENT
     1.0240D-08  2.2350D-08 -5.9600D-08 -1.1920D-07          ION ALPHA
     1.0040D+05  1.3110D+05 -6.5540D+04 -3.9320D+05          ION BETA
     2.793967723850D-09 7.105427357600D-15   147456     2432 DELTA-UTC: A0,A1,T,W
