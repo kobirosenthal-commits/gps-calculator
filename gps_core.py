@@ -2,8 +2,6 @@
 from datetime import datetime, timezone
 import re
 import requests
-import requests.packages.urllib3
-requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
 import logging
 import math
 import os
@@ -220,22 +218,48 @@ def parse_rinex2_utc_header(text):
     return out
 
 
-def parse_rinex2_nav(text):
-    """Parse RINEX 2.x GPS broadcast nav. Returns {prn: eph_dict} keyed on most-recent TOE."""
+def parse_rinex2_nav(text, diag=None):
+    """Parse RINEX 2.x GPS broadcast nav. Returns {prn: eph_dict} keyed on most-recent TOE.
+
+    If `diag` is a dict, it is populated with parse diagnostics so malformed or
+    truncated input can be surfaced to callers/monitoring instead of failing
+    silently:
+      - header_found:        bool, whether 'END OF HEADER' was seen
+      - records_seen:        total candidate epoch lines examined
+      - records_parsed:      records successfully parsed and kept
+      - records_skipped_short:   epoch line shorter than the minimum field width
+      - records_skipped_parse_error: epoch line fields didn't parse as numbers
+      - records_skipped_truncated:  record cut off before all 7 continuation
+        lines were present (e.g. file truncated mid-record at EOF)
+    """
+    if diag is None:
+        diag = {}
+    diag.setdefault('header_found', False)
+    diag.setdefault('records_seen', 0)
+    diag.setdefault('records_parsed', 0)
+    diag.setdefault('records_skipped_short', 0)
+    diag.setdefault('records_skipped_parse_error', 0)
+    diag.setdefault('records_skipped_truncated', 0)
+
     lines = text.splitlines()
     i = 0
     while i < len(lines):
         if 'END OF HEADER' in lines[i]:
+            diag['header_found'] = True
             i += 1
             break
         i += 1
 
+    if not diag['header_found']:
+        log.warning("parse_rinex2_nav: 'END OF HEADER' not found — input may be malformed or not RINEX 2.x nav")
+
     result = {}
-    while i < len(lines) - 7:
+    while i < len(lines) - 1:
         ln = lines[i]
         if len(ln) < 22:
             i += 1
             continue
+        diag['records_seen'] += 1
         try:
             prn   = int(ln[0:2])
             yy    = int(ln[3:5])
@@ -249,17 +273,30 @@ def parse_rinex2_nav(text):
             af1   = _fortran_float(ln[41:60])
             af2   = _fortran_float(ln[60:79])
         except (ValueError, IndexError):
+            diag['records_skipped_parse_error'] += 1
+            i += 1
+            continue
+
+        # A full record needs 7 continuation lines (28 broadcast fields). If the
+        # file is truncated mid-record (common with interrupted downloads) the
+        # remaining lines won't exist — don't silently zero-pad and fabricate
+        # ephemeris data, skip the record instead.
+        if i + 7 >= len(lines):
+            diag['records_skipped_truncated'] += 1
+            log.warning(f"parse_rinex2_nav: truncated record for PRN {prn} at line {i} — "
+                        f"expected 7 continuation lines, file ended early")
             i += 1
             continue
 
         vals = []
         for j in range(1, 8):
-            ol = lines[i + j] if i + j < len(lines) else ''
+            ol = lines[i + j]
             for k in range(4):
                 s = 3 + k * 19
                 vals.append(_fortran_float(ol[s:s + 19]) if len(ol) > s else 0.0)
 
         if len(vals) < 28:
+            diag['records_skipped_short'] += 1
             i += 8
             continue
 
@@ -280,7 +317,14 @@ def parse_rinex2_nav(text):
                 'tgd':    vals[22], 'iodc':   int(vals[23]),
                 'fit_interval': vals[25],
             }
+            diag['records_parsed'] += 1
         i += 8
+
+    if diag['records_skipped_truncated'] or diag['records_skipped_parse_error']:
+        log.warning(f"parse_rinex2_nav: {diag['records_parsed']} parsed, "
+                    f"{diag['records_skipped_truncated']} truncated, "
+                    f"{diag['records_skipped_parse_error']} parse errors, "
+                    f"{diag['records_skipped_short']} short-record skips")
 
     return result
 
@@ -349,7 +393,7 @@ def fetch_tle_group(group):
     }
     for url in urls:
         try:
-            r = requests.get(url, timeout=10, headers=headers, verify=False, allow_redirects=True)
+            r = requests.get(url, timeout=10, headers=headers, allow_redirects=True)
         except Exception as e:
             log.warning(f"fetch_tle_group({group}) {url}: {type(e).__name__}: {e}")
             continue
@@ -373,7 +417,7 @@ def fetch_glonass_constellation_status():
     headers = {'User-Agent': 'Mozilla/5.0'}
     out = {}
     try:
-        r = requests.get(url, timeout=15, verify=False, headers=headers)
+        r = requests.get(url, timeout=15, headers=headers)
         r.raise_for_status()
         data = r.json()
     except Exception as e:
@@ -418,7 +462,7 @@ def fetch_glonass_slot_map():
     headers = {'User-Agent': 'Mozilla/5.0'}
     mapping = {}
     try:
-        r = requests.get(url, timeout=15, verify=False, headers=headers)
+        r = requests.get(url, timeout=15, headers=headers)
         r.raise_for_status()
         data = r.json()
     except Exception as e:
@@ -584,6 +628,7 @@ def parse_rinex4_combined(line_iter, progress=None):
     it = iter(line_iter)
     line_count = 0
     eph_count = 0
+    eph_truncated = 0  # EPH header seen but record body was short/incomplete
     # Skip header but capture LEAP SECONDS line (format:
     #     dt_ls   dt_ls_future   wn_lsf   dn   timesys                   LEAP SECONDS)
     leap = None
@@ -708,6 +753,7 @@ def parse_rinex4_combined(line_iter, progress=None):
         if progress is not None and line_count % 5000 == 0:
             progress['lines_seen'] = line_count
             progress['eph_seen'] = eph_count
+            progress['eph_truncated'] = eph_truncated
         if ln.startswith('> ION '):
             parts = ln.split()
             if len(parts) >= 4:
@@ -771,6 +817,7 @@ def parse_rinex4_combined(line_iter, progress=None):
         if sys_letter == 'G' and msg_type == 'CNAV':
             rec = _read_record_from_iter(it, 8, epoch_line)
             if not rec or len(rec['vals']) < 29:
+                eph_truncated += 1
                 continue
             v = rec['vals']
             toe = v[8]
@@ -797,6 +844,7 @@ def parse_rinex4_combined(line_iter, progress=None):
             # Adds ISC_L1Cd, ISC_L1Cp on top of CNAV fields.
             rec = _read_record_from_iter(it, 9, epoch_line)
             if not rec or len(rec['vals']) < 30:
+                eph_truncated += 1
                 continue
             v = rec['vals']
             toe = v[8]
@@ -832,6 +880,7 @@ def parse_rinex4_combined(line_iter, progress=None):
         elif sys_letter == 'C' and msg_type in ('D1', 'D2'):
             rec = _read_record_from_iter(it, 8, epoch_line)
             if not rec or len(rec['vals']) < 26:
+                eph_truncated += 1
                 continue
             v = rec['vals']
             toe = v[8]
@@ -858,6 +907,7 @@ def parse_rinex4_combined(line_iter, progress=None):
             n_lines = 10 if msg_type == 'CNV2' else 9
             rec = _read_record_from_iter(it, n_lines, epoch_line)
             if not rec or len(rec['vals']) < 30:
+                eph_truncated += 1
                 continue
             v = rec['vals']
             toe = v[8]
@@ -893,6 +943,7 @@ def parse_rinex4_combined(line_iter, progress=None):
         elif sys_letter == 'C' and msg_type == 'CNV1':
             rec = _read_record_from_iter(it, 10, epoch_line)
             if not rec or len(rec['vals']) < 30:
+                eph_truncated += 1
                 continue
             v = rec['vals']
             toe = v[8]
@@ -924,6 +975,7 @@ def parse_rinex4_combined(line_iter, progress=None):
         elif sys_letter == 'R' and msg_type == 'FDMA':
             rec = _read_record_from_iter(it, 4, epoch_line)
             if not rec or len(rec['vals']) < 16:
+                eph_truncated += 1
                 continue
             v = rec['vals']
             epoch_str = f"{rec['year']:04d}-{rec['month']:02d}-{rec['day']:02d} {rec['hour']:02d}:{rec['minute']:02d}:00"
@@ -947,6 +999,7 @@ def parse_rinex4_combined(line_iter, progress=None):
         elif sys_letter == 'E' and msg_type in ('INAV', 'FNAV'):
             rec = _read_record_from_iter(it, 8, epoch_line)
             if not rec or len(rec['vals']) < 25:
+                eph_truncated += 1
                 continue
             v = rec['vals']
             toe = v[8]
@@ -976,6 +1029,10 @@ def parse_rinex4_combined(line_iter, progress=None):
     if progress is not None:
         progress['lines_seen'] = line_count
         progress['eph_seen'] = eph_count
+        progress['eph_truncated'] = eph_truncated
+    if eph_truncated:
+        log.warning(f"parse_rinex4_combined: {eph_truncated} EPH records truncated/malformed "
+                    f"out of {eph_count} seen — file may be incomplete")
     return {
         'gps_cnav': gps_cnav,
         'bds_d': bds_d,
@@ -991,6 +1048,7 @@ def parse_rinex4_combined(line_iter, progress=None):
         'sto': sto,
         'eop': eop,
         'leap': leap,
+        'eph_truncated': eph_truncated,
     }
 
 

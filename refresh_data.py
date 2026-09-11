@@ -8,11 +8,40 @@ import sys
 import gzip
 import json
 import datetime
+import tempfile
 import urllib.request
 from io import StringIO
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 HEADERS = {'User-Agent': 'gps-calculator-bot'}
+
+
+def _atomic_write(path, text, encoding='utf-8'):
+    """Write `text` to `path` atomically: write to a temp file in the same
+    directory, flush+fsync it, then os.replace() it into place. Readers (the
+    Flask app's background workers, or a concurrent refresh) either see the
+    old complete file or the new complete file — never a partially-written
+    one, which matters because these files are read from another process/
+    thread while a refresh may be in progress."""
+    directory = os.path.dirname(path) or '.'
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix='.tmp-', dir=directory)
+    try:
+        with os.fdopen(fd, 'w', encoding=encoding) as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _atomic_write_json(path, obj):
+    _atomic_write(path, json.dumps(obj))
 
 
 def _http_get(url, timeout=120):
@@ -35,6 +64,17 @@ def _fetch_text(urls, timeout=60):
             yield_msg = f"FAIL {url}: {type(e).__name__}: {e}"
             print(yield_msg)
     return None, None
+
+
+def _looks_like_tle(text):
+    """Structural sanity check before trusting fetched text as real TLE data:
+    require at least one properly-prefixed line-1/line-2 pair rather than
+    relying only on a byte-length heuristic (which would happily accept an
+    error page padded past 50 bytes)."""
+    if not text or len(text) <= 50:
+        return False
+    lines = text.splitlines()
+    return any(ln.startswith('1 ') for ln in lines) and any(ln.startswith('2 ') for ln in lines)
 
 
 def refresh_tles(log):
@@ -67,9 +107,8 @@ def refresh_tles(log):
                 break
             except Exception as e:
                 log(f"  TLE {fname} fail {url}: {type(e).__name__}: {e}")
-        if text and 'TLE' not in text and len(text) > 50:
-            with open(os.path.join(DATA_DIR, fname), 'w', encoding='utf-8') as f:
-                f.write(text)
+        if text and 'TLE' not in text and _looks_like_tle(text):
+            _atomic_write(os.path.join(DATA_DIR, fname), text)
             out[fname] = len(text)
             log(f"  TLE OK: {fname} ({len(text)} B from {used})")
         else:
@@ -93,8 +132,7 @@ def refresh_rinex2(log):
                 body = _http_get(url, timeout=60)
                 text = gzip.decompress(body).decode('utf-8', errors='replace')
                 if 'END OF HEADER' in text:
-                    with open(os.path.join(DATA_DIR, 'gps_rinex2.txt'), 'w', encoding='utf-8') as f:
-                        f.write(text)
+                    _atomic_write(os.path.join(DATA_DIR, 'gps_rinex2.txt'), text)
                     log(f"  RINEX2 OK: {url} ({len(text)} B)")
                     return True
             except Exception as e:
@@ -114,8 +152,7 @@ def refresh_rinex4(log):
             body = _http_get(url, timeout=180)
             text = gzip.decompress(body).decode('utf-8', errors='replace')
             if 'END OF HEADER' in text:
-                with open(os.path.join(DATA_DIR, 'gps_rinex4.txt'), 'w', encoding='utf-8') as f:
-                    f.write(text)
+                _atomic_write(os.path.join(DATA_DIR, 'gps_rinex4.txt'), text)
                 log(f"  RINEX4 OK: {url} ({len(text)} B)")
                 return dt
         except Exception as e:
@@ -150,22 +187,20 @@ def reparse_rinex4_jsons(dt, log):
             out[fname] = 0
             continue
         eph_str = {str(k): v for k, v in eph.items()}
-        with open(os.path.join(DATA_DIR, fname), 'w', encoding='utf-8') as f:
-            json.dump({'ephemeris': eph_str, 'date': date_str}, f)
+        _atomic_write_json(os.path.join(DATA_DIR, fname), {'ephemeris': eph_str, 'date': date_str})
         log(f"  JSON OK: {fname} ({len(eph)} PRNs)")
         out[fname] = len(eph)
     iono = parsed.get('iono') or {}
     if any(iono.values()):
-        with open(os.path.join(DATA_DIR, 'rinex4_iono.json'), 'w', encoding='utf-8') as f:
-            json.dump({'iono': iono, 'date': date_str}, f)
+        _atomic_write_json(os.path.join(DATA_DIR, 'rinex4_iono.json'), {'iono': iono, 'date': date_str})
         log(f"  JSON OK: rinex4_iono.json (klobuchar/nequick/bdgim)")
         out['rinex4_iono.json'] = sum(1 for v in iono.values() if v)
     sto = parsed.get('sto') or {}
     eop = parsed.get('eop')
     leap = parsed.get('leap')
     if sto or eop or leap:
-        with open(os.path.join(DATA_DIR, 'rinex4_systime.json'), 'w', encoding='utf-8') as f:
-            json.dump({'sto': sto, 'eop': eop, 'leap': leap, 'date': date_str}, f)
+        _atomic_write_json(os.path.join(DATA_DIR, 'rinex4_systime.json'),
+                            {'sto': sto, 'eop': eop, 'leap': leap, 'date': date_str})
         log(f"  JSON OK: rinex4_systime.json ({len(sto)} STO, EOP {'yes' if eop else 'no'}, leap {'yes' if leap else 'no'})")
         out['rinex4_systime.json'] = len(sto) + (1 if eop else 0) + (1 if leap else 0)
     return out
@@ -176,7 +211,7 @@ def refresh_all(log_fn=None):
     for each progress line (defaults to print)."""
     log = log_fn or print
     os.makedirs(DATA_DIR, exist_ok=True)
-    summary = {'started': datetime.datetime.utcnow().isoformat() + 'Z'}
+    summary = {'started': datetime.datetime.now(datetime.timezone.utc).isoformat()}
     log("→ TLEs")
     summary['tles'] = refresh_tles(log)
     log("→ RINEX 2 GPS LNAV")
@@ -187,7 +222,7 @@ def refresh_all(log_fn=None):
     if dt:
         log("→ Re-parse RINEX 4 → per-constellation JSONs")
         summary['jsons'] = reparse_rinex4_jsons(dt, log)
-    summary['finished'] = datetime.datetime.utcnow().isoformat() + 'Z'
+    summary['finished'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     log("Done.")
     return summary
 

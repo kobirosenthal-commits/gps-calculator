@@ -12,6 +12,7 @@ Run while Flask is up:   python3 validate_app.py
 import json
 import math
 import os
+import re
 import sys
 import time
 import urllib.request
@@ -188,11 +189,18 @@ def test_orbit_math():
     t_unix = now.timestamp()
     matches = 0
     big_diff = 0
+    no_prn = 0
+    # Celestrak GPS TLE names embed the actual GPS PRN, e.g.
+    # "GPS BIIR-2  (PRN 13)". The NORAD catalog number in line1[2:7] is a
+    # different identifier and does NOT match RINEX ephemeris's PRN keys, so
+    # extracting it from there silently made this cross-check a no-op.
+    prn_re = re.compile(r'\(PRN\s*(\d+)\)', re.IGNORECASE)
     for tle in gps_tles[:8]:  # sample first 8 SVs
-        try:
-            prn = int(tle['line1'][2:7])
-        except Exception:
+        m = prn_re.search(tle.get('name', ''))
+        if not m:
+            no_prn += 1
             continue
+        prn = int(m.group(1))
         eph = eph_data.get(prn)
         if not eph:
             continue
@@ -211,6 +219,8 @@ def test_orbit_math():
                 matches += 1
         except Exception as e:
             warn(f"PRN {prn}: propagation failed: {type(e).__name__}: {e}")
+    if no_prn:
+        warn(f"{no_prn} GPS TLE(s) had no '(PRN nn)' in their name — skipped")
     ok(f"{matches} GPS sats match RINEX↔TLE within tolerance ({big_diff} large diffs)")
 
 

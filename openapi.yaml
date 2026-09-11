@@ -1,0 +1,860 @@
+openapi: 3.1.0
+info:
+  title: GPS Calculator API
+  version: 1.0.0
+  description: |
+    Versioned schema for the current Flask API. JSON API errors use a stable
+    object shape with an `error` string. Validation and missing-cache failures
+    generally return 400, missing resources return 404, browser-pushed TLE
+    limit failures return 413, unavailable upstream/background/admin operations
+    return 503, and unhandled /api/* failures return JSON 500 responses.
+servers:
+  - url: http://localhost:5000
+    description: Local development
+  - url: https://gps-calculator.fly.dev
+    description: Example production deployment
+
+tags:
+  - name: Pages
+    description: Browser-rendered HTML pages
+  - name: Data loading
+    description: Loading and refreshing almanac, TLE, and RINEX data
+  - name: Positions
+    description: Satellite listing and position APIs
+  - name: Details
+    description: Satellite and broadcast-data details
+  - name: Status
+    description: Cache, freshness, ionosphere, and system-time status
+
+paths:
+  /:
+    get:
+      tags: [Pages]
+      summary: Render the primary Cesium live sky view
+      responses:
+        '200':
+          description: HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+  /cesium:
+    get:
+      tags: [Pages]
+      summary: Render the primary Cesium live sky view
+      responses:
+        '200':
+          description: HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+  /calculator:
+    get:
+      tags: [Pages]
+      summary: Render the form-based calculator UI
+      responses:
+        '200':
+          description: HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /api/load-almanac:
+    post:
+      tags: [Data loading]
+      summary: Load GPS YUMA almanac data or current non-GPS TLE data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoadAlmanacRequest'
+            examples:
+              gpsByDate:
+                summary: GPS almanac for a UTC date
+                value: {constellation: GPS, date: '2026-04-22'}
+              gpsToday:
+                summary: GPS using recent data
+                value: {constellation: GPS, date: today}
+              galileo:
+                summary: Current Galileo TLEs
+                value: {constellation: GALILEO}
+      responses:
+        '200':
+          description: Data loaded into the in-memory cache
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/LoadGpsAlmanacResponse'
+                  - $ref: '#/components/schemas/LoadTleResponse'
+              examples:
+                gps:
+                  value: {success: true, count: 32, week: 2416, toa: 319488, constellation: GPS}
+                galileo:
+                  value: {success: true, count: 31, constellation: GALILEO, source: Celestrak (current TLEs)}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        '500': {$ref: '#/components/responses/ServerError'}
+
+  /api/satellites:
+    get:
+      tags: [Positions]
+      summary: List loaded satellites for a constellation
+      parameters:
+        - $ref: '#/components/parameters/ConstellationQuery'
+      responses:
+        '200':
+          description: Loaded satellite list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SatellitesResponse'
+              examples:
+                gps:
+                  value:
+                    constellation: GPS
+                    date: '2026-04-22'
+                    satellites:
+                      - {id: 1, label: G01, health: Healthy, e: '0.01234567', sqA: '5153.6', inc: '55.00'}
+                beidou:
+                  value:
+                    constellation: BEIDOU
+                    date: '2026-09-11'
+                    satellites:
+                      - {id: 29, label: C29, name: BEIDOU-3 M21 (C29), health: Healthy}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '500': {$ref: '#/components/responses/ServerError'}
+
+  /api/calculate:
+    post:
+      tags: [Positions]
+      summary: Calculate one satellite position at a requested time
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CalculateRequest'
+            examples:
+              gps:
+                value: {constellation: GPS, prn: 1, time: '2026-04-22 12:00:00'}
+              glonassNow:
+                value: {constellation: GLONASS, prn: 1, time: now}
+      responses:
+        '200':
+          description: Position result with formatted ECEF/geodetic values
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculateResponse'
+              example:
+                prn: 1
+                label: G01
+                constellation: GPS
+                time: '2026-04-22 12:00:00'
+                ecef: {x: '15,123,456', y: '-20,123,456', z: '11,123,456', r: '26,560.0'}
+                geodetic: {latitude: '23.4567', longitude: '-53.2100', altitude: '20,200.0'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/ServerError'}
+
+  /api/live-positions:
+    get:
+      tags: [Positions]
+      summary: Return live or frozen positions for all currently available satellites
+      parameters:
+        - name: at
+          in: query
+          required: false
+          description: Optional ISO-8601 timestamp. If omitted, current server UTC is used.
+          schema:
+            type: string
+            examples: ['2026-09-11T10:00:00Z']
+      responses:
+        '200':
+          description: Current multi-constellation positions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LivePositionsResponse'
+              example:
+                time: '2026-09-11 10:00:00 UTC'
+                time_iso: '2026-09-11T10:00:00Z'
+                tos: 36000.0
+                frozen: true
+                almanac_date: '2026-09-09'
+                satellites:
+                  - {prn: 1, label: G01, constellation: GPS, healthy: true, x: 15123456.0, y: -20123456.0, z: 11123456.0, lat: 23.4567, lon: -53.21, alt_km: 20200.0}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        '500': {$ref: '#/components/responses/ServerError'}
+
+  /api/satellite-detail:
+    get:
+      tags: [Details]
+      summary: Return almanac, TLE, and broadcast details for one satellite label
+      parameters:
+        - name: label
+          in: query
+          required: true
+          schema:
+            type: string
+            examples: [G01, R01, C29, E11]
+        - $ref: '#/components/parameters/ConstellationQuery'
+      responses:
+        '200':
+          description: Satellite detail. Broadcast sections are included only when cached data exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SatelliteDetailResponse'
+              examples:
+                gps:
+                  value:
+                    label: G01
+                    constellation: GPS
+                    almanac: {gps_week: 2416, toa: 319488, sqrt_a: 5153.6, semi_major_axis_km: 26560.0, eccentricity: 0.0123, inclination_deg: 55.0, health: 0}
+                glonass:
+                  value:
+                    label: R01
+                    constellation: GLONASS
+                    tle: {name: COSMOS ..., line1: 1 ..., line2: 2 ...}
+                    glonass_fdma: {toc: '2026-09-11T00:00:00', freq_num: 1, health: 0}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/ServerError'}
+
+  /api/rinex-status:
+    get:
+      tags: [Status]
+      summary: Report loaded RINEX 2/RINEX 4 cache status
+      responses:
+        '200':
+          description: Cache status by navigation-message family
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RinexStatusResponse'
+              example:
+                lnav: {loaded: true, date: '2026-09-11', prns: 31}
+                cnav: {loaded: true, date: '2026-09-10', prns: 12}
+                bds_d: {loaded: true, date: '2026-09-10', prns: 45}
+                bds_cnv1: {loaded: true, date: '2026-09-10', prns: 28}
+                gal_inav: {loaded: true, date: '2026-09-10', prns: 30}
+                gal_fnav: {loaded: true, date: '2026-09-10', prns: 24}
+                rinex4_diag: {stage: done, last_error: null}
+        '500': {$ref: '#/components/responses/ServerError'}
+
+  /api/refresh-data:
+    post:
+      tags: [Data loading]
+      summary: Admin-only refresh of TLE/RINEX files and in-memory caches
+      security:
+        - AdminToken: []
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Refresh ran; inspect `complete` and `partial_failures` for partial failures.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshDataResponse'
+              example:
+                ok: true
+                complete: false
+                partial_failures: [tle:glo-ops.tle, rinex4]
+                summary: {tles: {gps.tle: 1234, glo-ops.tle: null}, rinex2: true, rinex4: false}
+                log: ['→ TLEs', Done.]
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        '500': {$ref: '#/components/responses/RefreshServerError'}
+
+  /api/ionosphere:
+    get:
+      tags: [Status]
+      summary: Return broadcast ionospheric model coefficients from RINEX 4 JSON
+      responses:
+        '200':
+          description: Ionosphere data or empty null models when file is absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IonosphereResponse'
+              example:
+                iono: {klobuchar: [1.0e-8, 0.0, 0.0, 0.0], nequick: [1.0, 2.0, 3.0], bdgim: [0.1, 0.2, 0.3]}
+                date: '2026-09-10'
+                mtime: 1789123456
+        '500': {$ref: '#/components/responses/ServerError'}
+
+  /api/gps-almanac:
+    get:
+      tags: [Details]
+      summary: Return GPS slot summaries from the loaded YUMA almanac
+      responses:
+        '200':
+          description: GPS slot summaries keyed by PRN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotsWithDateResponse'
+              example:
+                slots:
+                  '1': {prn: 1, health: 0, e: 0.0123, sqrt_a: 5153.6, inc_deg: 55.0, omega_deg: 90.0, omega0_deg: 180.0, m0_deg: 20.0, toa: 319488, gps_week: 2416}
+                date: '2026-04-22'
+        '500': {$ref: '#/components/responses/ServerError'}
+
+  /api/beidou-almanac:
+    get:
+      tags: [Details]
+      summary: Return BeiDou D1/D2-derived almanac-style summaries
+      responses:
+        '200':
+          description: BeiDou summaries keyed by PRN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotsWithDateResponse'
+              example:
+                slots:
+                  '29': {prn: 29, health: 0, e: 0.0012, sqrt_a: 5282.6, inc_deg: 55.0, omega0_deg: 110.0, m0_deg: 15.0, msg_type: D1, bdt_week: 1075}
+                date: '2026-09-10'
+        '500': {$ref: '#/components/responses/ServerError'}
+
+  /api/galileo-almanac:
+    get:
+      tags: [Details]
+      summary: Return Galileo I/NAV summaries with F/NAV fallback
+      responses:
+        '200':
+          description: Galileo summaries keyed by PRN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotsWithDateResponse'
+              example:
+                slots:
+                  '11': {prn: 11, health: 0, e: 0.0003, sqrt_a: 5440.6, inc_deg: 56.0, omega0_deg: 120.0, m0_deg: 10.0, sisa: 3.0, gal_week: 1372}
+                date: '2026-09-10'
+        '500': {$ref: '#/components/responses/ServerError'}
+
+  /api/glonass-almanac:
+    get:
+      tags: [Details]
+      summary: Return full GLONASS constellation status from IAC with 30-minute cache
+      responses:
+        '200':
+          description: GLONASS slots, or an error plus empty slots if IAC lookup fails
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlonassAlmanacResponse'
+              examples:
+                success:
+                  value: {slots: {'1': {slot: 1, status: operational, name: COSMOS ...}}, fetched_ts: 1789123456}
+                upstreamFailure:
+                  value: {error: GLONASS constellation status fetch failed, slots: {}}
+        '500': {$ref: '#/components/responses/ServerError'}
+
+  /api/system-time:
+    get:
+      tags: [Status]
+      summary: Return RINEX 4 system time offsets, EOP, and leap-second data
+      responses:
+        '200':
+          description: System-time data or empty values when file is absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemTimeResponse'
+              example:
+                sto: {GPUT: {values: [0.0, -1.0e-9, 345600, 2416]}}
+                eop: {xp: 0.0, yp: 0.0}
+                leap: {current: 18, future: null}
+                date: '2026-09-10'
+                mtime: 1789123456
+        '500': {$ref: '#/components/responses/ServerError'}
+
+  /api/data-freshness:
+    get:
+      tags: [Status]
+      summary: Return Unix mtimes for cached data files
+      responses:
+        '200':
+          description: File mtimes keyed by data family; null means absent or unreadable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataFreshnessResponse'
+              example:
+                gps_lnav: 1789123456
+                gps_cnav: 1789123457
+                bds_d: 1789123457
+                bds_cnv1: 1789123457
+                bds_cnv2: 1789123457
+                bds_cnv3: 1789123457
+                gal_inav: 1789123457
+                gal_fnav: 1789123457
+                glo_fdma: 1789123457
+                tle_gps: null
+                tle_glo: 1789123458
+                tle_bds: 1789123458
+                tle_gal: 1789123458
+        '500': {$ref: '#/components/responses/ServerError'}
+
+  /api/fetch-tles:
+    post:
+      tags: [Data loading]
+      summary: Report whether server-cached non-GPS TLEs are available
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TleConstellationRequest'
+            example: {constellation: BEIDOU}
+      responses:
+        '200':
+          description: Cached TLEs are ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FetchTlesReadyResponse'
+              example: {success: true, count: 49}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '503':
+          description: Background worker has not loaded TLEs yet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWithSuccessFalse'
+              example: {success: false, error: not yet loaded — background thread still fetching}
+        '500': {$ref: '#/components/responses/ServerError'}
+
+  /api/push-tles:
+    post:
+      tags: [Data loading]
+      summary: Accept browser-fetched TLE text for GLONASS, BeiDou, or Galileo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushTlesRequest'
+            example:
+              constellation: BEIDOU
+              text: "BEIDOU-3 M21 (C29)\n1 43001U ... checksum\n2 43001 ... checksum\n"
+      responses:
+        '200':
+          description: TLE text parsed, validated, identity-mapped, and cached
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushTlesResponse'
+              example: {success: true, count: 1, constellation: BEIDOU}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        '500': {$ref: '#/components/responses/ServerError'}
+
+components:
+  securitySchemes:
+    AdminToken:
+      type: apiKey
+      in: header
+      name: X-Admin-Token
+    BearerAuth:
+      type: http
+      scheme: bearer
+
+  parameters:
+    ConstellationQuery:
+      name: constellation
+      in: query
+      required: false
+      description: Defaults to GPS when omitted.
+      schema:
+        $ref: '#/components/schemas/Constellation'
+
+  responses:
+    BadRequest:
+      description: Invalid JSON, invalid parameter, validation failure, or required cache not loaded
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: Invalid JSON}
+    Unauthorized:
+      description: Missing or invalid admin token
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: 'Unauthorized: valid X-Admin-Token header required'}
+    NotFound:
+      description: Requested almanac, PRN, label, or satellite was not found
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: Not found}
+    PayloadTooLarge:
+      description: TLE payload text or parsed TLE record count exceeded configured limits
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: TLE payload too large (max 300000 bytes)}
+    ServiceUnavailable:
+      description: Upstream data, background cache, or admin endpoint is unavailable
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: Could not load satellite data}
+    ServerError:
+      description: Unhandled API exception serialized as JSON for /api/* routes
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: 'RuntimeError: unexpected failure'}
+    RefreshServerError:
+      description: Refresh endpoint top-level failure
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/RefreshFailure'}
+          example: {ok: false, error: refresh failed, trace: Traceback ...}
+
+  schemas:
+    Constellation:
+      type: string
+      enum: [GPS, GLONASS, BEIDOU, GALILEO]
+      default: GPS
+    TleConstellation:
+      type: string
+      enum: [GLONASS, BEIDOU, GALILEO]
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+      additionalProperties: true
+    ErrorWithSuccessFalse:
+      type: object
+      required: [success, error]
+      properties:
+        success: {type: boolean, const: false}
+        error: {type: string}
+      additionalProperties: true
+
+    LoadAlmanacRequest:
+      type: object
+      properties:
+        constellation:
+          $ref: '#/components/schemas/Constellation'
+        date:
+          type: string
+          description: GPS only. `today` or a UTC calendar date in YYYY-MM-DD format.
+          default: today
+      additionalProperties: true
+    LoadGpsAlmanacResponse:
+      type: object
+      required: [success, count, week, toa, constellation]
+      properties:
+        success: {type: boolean, const: true}
+        count: {type: integer}
+        week: {type: integer}
+        toa: {type: number}
+        constellation: {type: string, const: GPS}
+      additionalProperties: true
+    LoadTleResponse:
+      type: object
+      required: [success, count, constellation, source]
+      properties:
+        success: {type: boolean, const: true}
+        count: {type: integer}
+        constellation: {$ref: '#/components/schemas/TleConstellation'}
+        source: {type: string}
+      additionalProperties: true
+
+    SatelliteListItem:
+      type: object
+      required: [id, label, health]
+      properties:
+        id: {type: integer}
+        label: {type: string}
+        name: {type: string}
+        health: {type: string}
+        e: {type: string}
+        sqA: {type: string}
+        inc: {type: string}
+      additionalProperties: true
+    SatellitesResponse:
+      type: object
+      required: [satellites, date, constellation]
+      properties:
+        satellites:
+          type: array
+          items: {$ref: '#/components/schemas/SatelliteListItem'}
+        date:
+          type: [string, 'null']
+        constellation:
+          $ref: '#/components/schemas/Constellation'
+      additionalProperties: true
+
+    CalculateRequest:
+      type: object
+      properties:
+        constellation:
+          $ref: '#/components/schemas/Constellation'
+        prn:
+          type: [integer, string]
+          description: GPS PRN or non-GPS stable satellite ID.
+        time:
+          type: string
+          description: `now` or `YYYY-MM-DD HH:MM:SS`.
+          default: now
+      additionalProperties: true
+    FormattedEcef:
+      type: object
+      required: [x, y, z, r]
+      properties:
+        x: {type: string}
+        y: {type: string}
+        z: {type: string}
+        r: {type: string, description: Radius in kilometers, formatted string}
+      additionalProperties: true
+    FormattedGeodetic:
+      type: object
+      required: [latitude, longitude, altitude]
+      properties:
+        latitude: {type: string}
+        longitude: {type: string}
+        altitude: {type: string, description: Altitude in kilometers, formatted string}
+      additionalProperties: true
+    CalculateResponse:
+      type: object
+      required: [prn, label, constellation, time, ecef, geodetic]
+      properties:
+        prn: {type: integer}
+        label: {type: string}
+        constellation: {$ref: '#/components/schemas/Constellation'}
+        time: {type: string}
+        ecef: {$ref: '#/components/schemas/FormattedEcef'}
+        geodetic: {$ref: '#/components/schemas/FormattedGeodetic'}
+      additionalProperties: true
+
+    LiveSatellite:
+      type: object
+      required: [prn, label, constellation, healthy, x, y, z, lat, lon, alt_km]
+      properties:
+        prn: {type: integer}
+        label: {type: string}
+        constellation: {$ref: '#/components/schemas/Constellation'}
+        name: {type: string}
+        healthy: {type: boolean}
+        x: {type: number, description: ECEF X in meters}
+        y: {type: number, description: ECEF Y in meters}
+        z: {type: number, description: ECEF Z in meters}
+        lat: {type: number}
+        lon: {type: number}
+        alt_km: {type: number}
+      additionalProperties: true
+    LivePositionsResponse:
+      type: object
+      required: [time, time_iso, tos, frozen, almanac_date, satellites]
+      properties:
+        time: {type: string}
+        time_iso: {type: string}
+        tos: {type: number, description: Seconds into UTC day}
+        frozen: {type: boolean}
+        almanac_date: {type: [string, 'null']}
+        satellites:
+          type: array
+          items: {$ref: '#/components/schemas/LiveSatellite'}
+      additionalProperties: true
+
+    TleObject:
+      type: object
+      required: [name, line1, line2]
+      properties:
+        name: {type: string}
+        line1: {type: string}
+        line2: {type: string}
+      additionalProperties: true
+    SatelliteDetailResponse:
+      type: object
+      required: [label, constellation]
+      properties:
+        label: {type: string}
+        constellation: {$ref: '#/components/schemas/Constellation'}
+        tle: {$ref: '#/components/schemas/TleObject'}
+        almanac: {$ref: '#/components/schemas/NumericMap'}
+        ephemeris: {$ref: '#/components/schemas/NumericMap'}
+        cnav: {$ref: '#/components/schemas/NumericMap'}
+        cnv2: {$ref: '#/components/schemas/NumericMap'}
+        glonass_fdma: {$ref: '#/components/schemas/NumericMap'}
+        beidou_d: {$ref: '#/components/schemas/NumericMap'}
+        beidou_cnv1: {$ref: '#/components/schemas/NumericMap'}
+        beidou_cnv2: {$ref: '#/components/schemas/NumericMap'}
+        beidou_cnv3: {$ref: '#/components/schemas/NumericMap'}
+        galileo_inav: {$ref: '#/components/schemas/NumericMap'}
+        galileo_fnav: {$ref: '#/components/schemas/NumericMap'}
+      additionalProperties: true
+
+    RinexFamilyStatus:
+      type: object
+      required: [loaded, date, prns]
+      properties:
+        loaded: {type: boolean}
+        date: {type: [string, 'null']}
+        prns: {type: integer}
+      additionalProperties: true
+    RinexStatusResponse:
+      type: object
+      required: [lnav, cnav, bds_d, bds_cnv1, gal_inav, gal_fnav, rinex4_diag]
+      properties:
+        lnav: {$ref: '#/components/schemas/RinexFamilyStatus'}
+        cnav: {$ref: '#/components/schemas/RinexFamilyStatus'}
+        bds_d: {$ref: '#/components/schemas/RinexFamilyStatus'}
+        bds_cnv1: {$ref: '#/components/schemas/RinexFamilyStatus'}
+        gal_inav: {$ref: '#/components/schemas/RinexFamilyStatus'}
+        gal_fnav: {$ref: '#/components/schemas/RinexFamilyStatus'}
+        rinex4_diag: {$ref: '#/components/schemas/FreeFormObject'}
+      additionalProperties: true
+
+    RefreshDataResponse:
+      type: object
+      required: [ok, complete, partial_failures, summary, log]
+      properties:
+        ok: {type: boolean, const: true}
+        complete: {type: boolean}
+        partial_failures:
+          type: array
+          items: {type: string}
+        summary: {$ref: '#/components/schemas/FreeFormObject'}
+        log:
+          type: array
+          items: {type: string}
+      additionalProperties: true
+    RefreshFailure:
+      type: object
+      required: [ok, error, trace]
+      properties:
+        ok: {type: boolean, const: false}
+        error: {type: string}
+        trace: {type: string}
+      additionalProperties: true
+
+    IonosphereResponse:
+      type: object
+      required: [iono, date, mtime]
+      properties:
+        iono:
+          type: object
+          properties:
+            klobuchar: {type: [array, 'null'], items: {type: number}}
+            nequick: {type: [array, 'null'], items: {type: number}}
+            bdgim: {type: [array, 'null'], items: {type: number}}
+          additionalProperties: true
+        date: {type: [string, 'null']}
+        mtime: {type: [integer, 'null']}
+      additionalProperties: true
+    SystemTimeResponse:
+      type: object
+      required: [sto, eop, date, mtime]
+      properties:
+        sto: {$ref: '#/components/schemas/FreeFormObject'}
+        eop: {oneOf: [{$ref: '#/components/schemas/FreeFormObject'}, {type: 'null'}]}
+        leap: {oneOf: [{$ref: '#/components/schemas/FreeFormObject'}, {type: 'null'}]}
+        date: {type: [string, 'null']}
+        mtime: {type: [integer, 'null']}
+      additionalProperties: true
+    DataFreshnessResponse:
+      type: object
+      required: [gps_lnav, gps_cnav, bds_d, bds_cnv1, bds_cnv2, bds_cnv3, gal_inav, gal_fnav, glo_fdma, tle_gps, tle_glo, tle_bds, tle_gal]
+      properties:
+        gps_lnav: {$ref: '#/components/schemas/NullableUnixTime'}
+        gps_cnav: {$ref: '#/components/schemas/NullableUnixTime'}
+        bds_d: {$ref: '#/components/schemas/NullableUnixTime'}
+        bds_cnv1: {$ref: '#/components/schemas/NullableUnixTime'}
+        bds_cnv2: {$ref: '#/components/schemas/NullableUnixTime'}
+        bds_cnv3: {$ref: '#/components/schemas/NullableUnixTime'}
+        gal_inav: {$ref: '#/components/schemas/NullableUnixTime'}
+        gal_fnav: {$ref: '#/components/schemas/NullableUnixTime'}
+        glo_fdma: {$ref: '#/components/schemas/NullableUnixTime'}
+        tle_gps: {$ref: '#/components/schemas/NullableUnixTime'}
+        tle_glo: {$ref: '#/components/schemas/NullableUnixTime'}
+        tle_bds: {$ref: '#/components/schemas/NullableUnixTime'}
+        tle_gal: {$ref: '#/components/schemas/NullableUnixTime'}
+      additionalProperties: false
+    NullableUnixTime:
+      type: [integer, 'null']
+      description: Unix mtime in seconds, or null if the file is absent/unreadable.
+
+    SlotsWithDateResponse:
+      type: object
+      required: [slots, date]
+      properties:
+        slots:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/NumericMap'
+        date: {type: [string, 'null']}
+      additionalProperties: true
+    GlonassAlmanacResponse:
+      type: object
+      required: [slots]
+      properties:
+        slots:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/FreeFormObject'
+        fetched_ts: {type: integer}
+        error: {type: string}
+      additionalProperties: true
+
+    TleConstellationRequest:
+      type: object
+      properties:
+        constellation: {$ref: '#/components/schemas/TleConstellation'}
+      additionalProperties: true
+    FetchTlesReadyResponse:
+      type: object
+      required: [success, count]
+      properties:
+        success: {type: boolean, const: true}
+        count: {type: integer}
+      additionalProperties: true
+    PushTlesRequest:
+      type: object
+      required: [constellation, text]
+      properties:
+        constellation: {$ref: '#/components/schemas/TleConstellation'}
+        text:
+          type: string
+          description: Raw TLE text containing name/line1/line2 records with valid checksums.
+      additionalProperties: true
+    PushTlesResponse:
+      type: object
+      required: [success, count, constellation]
+      properties:
+        success: {type: boolean, const: true}
+        count: {type: integer}
+        constellation: {$ref: '#/components/schemas/TleConstellation'}
+      additionalProperties: true
+
+    NumericMap:
+      type: object
+      additionalProperties:
+        oneOf:
+          - type: string
+          - type: number
+          - type: integer
+          - type: boolean
+          - type: 'null'
+          - type: array
+            items: {}
+          - $ref: '#/components/schemas/FreeFormObject'
+    FreeFormObject:
+      type: object
+      additionalProperties: true
