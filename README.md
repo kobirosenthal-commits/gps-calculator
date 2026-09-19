@@ -56,7 +56,7 @@ passwords, 5-attempt lockout). Roles: `underwriter` (assess/search/consent),
 `risk_manager` (adds decision history + compliance policy), `admin` (adds user
 management at `/api/users`). The audit operator is always taken from the
 logged-in session. Demo users: `dan.k/Loan!2026`, `rachel.r/Risk!2026`,
-`admin/Admin!2026` — replace with the bank IdP (SSO) before production, and
+`5331/5331` (admin) — replace with the bank IdP (SSO) before production, and
 serve behind TLS.
 
 ## Stage 4: Operational hardening

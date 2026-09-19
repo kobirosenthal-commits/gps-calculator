@@ -32,7 +32,7 @@ LOCKOUT_MINUTES = 15
 
 # Demo bootstrap users — replace with the bank IdP before production.
 DEFAULT_USERS = [
-    ("admin", "Admin!2026", "admin", "מנהל מערכת"),
+    ("5331", "5331", "admin", "מנהל מערכת"),
     ("rachel.r", "Risk!2026", "risk_manager", "רחל רביב — מנהלת סיכונים"),
     ("dan.k", "Loan!2026", "underwriter", "דן קליין — חתם אשראי"),
 ]

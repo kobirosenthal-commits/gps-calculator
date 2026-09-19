@@ -95,7 +95,7 @@ def run():
     _assert(named_batch.json()["scored"] == 1, "named batch did not score the customer")
 
     admin = requests.Session()
-    _login(admin, "admin", "Admin!2026")
+    _login(admin, "5331", "5331")
     admin_page = admin.get(f"{BASE_URL}/admin", timeout=20)
     _assert(admin_page.status_code == 200, "admin page unavailable for admin")
     rm_admin_page = risk_manager.get(f"{BASE_URL}/admin", timeout=20)
