@@ -1,358 +1,608 @@
-<!doctype html>
-<html lang="he" dir="rtl">
+<!DOCTYPE html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CreditLens — דירוג סיכון לקוח</title>
-<link rel="icon" href="/static/creditlens.ico">
-<style>
-  :root{
-    --bg:#f4f6fa; --surface:#ffffff; --line:#e4e9f2;
-    --ink:#101828; --muted:#667085; --faint:#98a2b3;
-    --primary:#1d4ed8; --primary-soft:#eff4ff;
-    --green:#067647; --green-soft:#ecfdf3;
-    --amber:#b54708; --amber-soft:#fffaeb;
-    --red:#b42318; --red-soft:#fef3f2;
-    --navy:#0c1a3a; --navy-2:#13275c;
-    --radius:14px;
-    --shadow:0 1px 2px rgba(16,24,40,.04),0 4px 16px rgba(16,24,40,.06);
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--ink);font:14px/1.5 "Segoe UI","Heebo",system-ui,Arial,sans-serif;-webkit-font-smoothing:antialiased}
-  .app{display:grid;grid-template-columns:252px 1fr;min-height:100vh}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Calculator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-  /* ── Sidebar ─────────────────────────────────────── */
-  aside{background:linear-gradient(180deg,var(--navy) 0%,var(--navy-2) 100%);color:#c2cdea;padding:28px 18px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
-  .brand{display:flex;align-items:center;gap:11px;padding:0 8px;margin-bottom:38px}
-  .brand-mark{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#2e5cff,#7aa5ff);display:grid;place-items:center;flex-shrink:0}
-  .brand-mark svg{width:22px;height:22px}
-  .brand-name{font-size:19px;font-weight:700;color:#fff;letter-spacing:.2px}
-  .brand-name span{color:#8fb0ff}
-  .brand-sub{font-size:10.5px;color:#7487b8;margin-top:1px}
-  nav{display:grid;gap:4px}
-  nav a{display:flex;align-items:center;gap:11px;color:#aab8dd;text-decoration:none;padding:11px 12px;border-radius:9px;font-weight:500;transition:.15s}
-  nav a svg{width:17px;height:17px;opacity:.8;flex-shrink:0}
-  nav a:hover{background:rgba(255,255,255,.06);color:#fff}
-  nav a.active{background:rgba(60,110,255,.22);color:#fff;box-shadow:inset 0 0 0 1px rgba(120,160,255,.25)}
-  .side-foot{margin-top:auto;padding:14px 8px 0;border-top:1px solid rgba(255,255,255,.08);font-size:11px;color:#6b7ca8;line-height:1.7}
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
 
-  /* ── Main ────────────────────────────────────────── */
-  main{padding:30px 40px 48px;max-width:1480px;width:100%;margin:0 auto;min-width:0}
-  .topbar{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:24px;flex-wrap:wrap}
-  h1{font-size:24px;font-weight:700;letter-spacing:-.2px}
-  .page-sub{color:var(--muted);margin-top:3px;font-size:13.5px}
-  .status-chip{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:12.5px;color:var(--muted);box-shadow:var(--shadow);white-space:nowrap}
-  .status-chip .dot{width:8px;height:8px;border-radius:50%;background:#12b76a;box-shadow:0 0 0 3px #d1fadf}
-  .status-chip b{color:var(--ink)}
-  .user-chip .logout{color:var(--red);text-decoration:none;font-weight:600;margin-right:6px;font-size:12px}
-  .user-chip .logout:hover{text-decoration:underline}
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
 
-  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
 
-  /* ── Query bar ───────────────────────────────────── */
-  .query-card{display:flex;align-items:flex-end;gap:14px;padding:20px 22px;margin-bottom:14px;flex-wrap:wrap}
-  .field{display:flex;flex-direction:column;gap:6px}
-  .field.grow{flex:1;min-width:260px}
-  .field label{font-size:12px;font-weight:600;color:var(--muted)}
-  .field input{border:1px solid #d0d7e2;border-radius:9px;padding:11px 14px;font-size:14.5px;font-family:inherit;background:#fcfdff;transition:.15s;width:100%}
-  .field input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3.5px rgba(29,78,216,.12);background:#fff}
-  .field input::placeholder{color:var(--faint)}
-  #amount{width:170px}
-  button.cta{background:var(--primary);color:#fff;border:0;border-radius:9px;padding:12px 26px;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;display:flex;align-items:center;gap:9px;transition:.15s;height:43px}
-  button.cta:hover:not(:disabled){background:#1e40af;transform:translateY(-1px);box-shadow:0 4px 12px rgba(29,78,216,.3)}
-  button.cta:disabled{opacity:.65;cursor:progress}
-  .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:rot .7s linear infinite;display:none}
-  button.cta.loading .spin{display:block}
-  @keyframes rot{to{transform:rotate(360deg)}}
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
 
-  /* ── Banners ─────────────────────────────────────── */
-  .banner{border-radius:11px;padding:14px 18px;margin-bottom:14px;font-size:13.5px;line-height:1.65;border:1px solid}
-  .banner strong{display:block;margin-bottom:3px;font-size:13.5px}
-  .banner.danger{background:var(--red-soft);border-color:#fecdca;color:var(--red)}
-  .banner.warn{background:var(--amber-soft);border-color:#fedf89;color:var(--amber)}
+        .subtitle {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
 
-  /* ── Result grid ─────────────────────────────────── */
-  .grid{display:grid;grid-template-columns:1.45fr 1fr;gap:14px;margin-bottom:14px;align-items:start}
-  .card-pad{padding:24px 26px}
-  .card-title{font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:20px}
-  .card-title .sub{font-weight:400}
-  .sub{color:var(--muted);font-size:12.5px}
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
 
-  .result-layout{display:flex;align-items:center;gap:34px;flex-wrap:wrap}
-  .gauge-wrap{position:relative;width:172px;height:172px;flex-shrink:0}
-  .gauge-wrap svg{transform:rotate(-90deg)}
-  .gauge-bg{fill:none;stroke:#eef1f6;stroke-width:13}
-  #gauge-arc{fill:none;stroke:#d0d7e2;stroke-width:13;stroke-linecap:round;stroke-dasharray:414.7;stroke-dashoffset:414.7;transition:stroke-dashoffset .8s cubic-bezier(.4,0,.2,1),stroke .4s}
-  .gauge-center{position:absolute;inset:0;display:grid;place-items:center;text-align:center}
-  .gauge-center b{font-size:40px;font-weight:800;letter-spacing:-1px;display:block;line-height:1}
-  .gauge-center small{color:var(--faint);font-size:10.5px;display:block;margin-top:5px}
-  .decision{font-size:22px;font-weight:800;margin-bottom:4px;letter-spacing:-.2px}
-  .decision.green{color:var(--green)}.decision.amber{color:var(--amber)}.decision.red{color:var(--red)}
-  #customer-name{font-size:13.5px}
-  .metrics{display:grid;grid-template-columns:repeat(3,minmax(108px,1fr));gap:10px;margin-top:20px}
-  .metric{background:#f8fafd;border:1px solid #eef1f6;border-radius:11px;padding:12px 14px}
-  .metric label{font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px}
-  .metric strong{font-size:16.5px;font-weight:700}
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
 
-  /* ── Sources ─────────────────────────────────────── */
-  .source-meta{font-size:12px;color:var(--muted);background:var(--primary-soft);border:1px solid #d6e2ff;border-radius:9px;padding:10px 14px;margin-bottom:14px;line-height:1.6}
-  .sources{max-height:308px;overflow-y:auto;display:grid;gap:2px;margin:0 -8px}
-  .sources::-webkit-scrollbar{width:8px}
-  .sources::-webkit-scrollbar-thumb{background:#dbe2ee;border-radius:4px}
-  .source{display:flex;align-items:center;gap:10px;padding:8.5px 10px;border-radius:8px;font-size:12.5px}
-  .source:hover{background:#f6f8fc}
-  .source .file-ic{width:26px;height:26px;border-radius:7px;background:var(--green-soft);display:grid;place-items:center;flex-shrink:0}
-  .source .file-ic svg{width:14px;height:14px;stroke:var(--green)}
-  .source .s-name{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .source .s-fields{color:var(--faint);font-size:11.5px}
-  .reg{margin-top:16px;padding:15px 17px;background:#f8fafd;border:1px solid var(--line);border-radius:11px;font-size:12.5px;line-height:1.7}
-  .reg-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}
-  .reg-head strong{font-size:13px}
-  .reg-badge{background:var(--amber-soft);color:var(--amber);border:1px solid #fedf89;border-radius:999px;padding:2px 11px;font-size:11px;font-weight:600;white-space:nowrap}
-  .reg small{color:var(--muted)}
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
 
-  /* ── Criteria table ──────────────────────────────── */
-  table{width:100%;border-collapse:collapse}
-  th{text-align:right;color:var(--muted);font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;padding:10px 12px;border-bottom:1px solid var(--line)}
-  td{padding:13px 12px;border-bottom:1px solid #f1f4f9;vertical-align:middle;font-size:13px}
-  tr:last-child td{border-bottom:none}
-  tr:hover td{background:#fafbfe}
-  td .c-name{font-weight:600;font-size:13.5px}
-  td .c-desc{color:var(--muted);font-size:11.5px;margin-top:1px}
-  .w-chip{background:#f2f4f7;border-radius:999px;padding:3px 12px;font-weight:700;font-size:12px;color:#475467}
-  .bar{height:6px;background:#eef1f6;border-radius:99px;overflow:hidden;width:150px;display:inline-block;vertical-align:middle;margin-left:10px}
-  .bar i{display:block;height:100%;border-radius:99px;background:var(--primary);transition:width .6s}
-  .bar i.good{background:#12b76a}.bar i.mid{background:#f79009}.bar i.bad{background:#f04438}
-  .contrib{font-weight:700;font-size:13.5px}
+        .card h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
 
-  .empty{color:var(--faint);text-align:center;padding:34px 0;font-size:13px}
-  .consent{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer;flex-basis:100%;padding-top:2px}
-  .consent input{width:15px;height:15px;accent-color:var(--primary);cursor:pointer}
-  .audit-line{margin-top:16px;padding-top:12px;border-top:1px dashed var(--line);font-size:11.5px;color:var(--faint);display:flex;gap:14px;flex-wrap:wrap}
-  .reason-codes{margin-top:14px;display:grid;gap:6px}
-  .reason-codes .rc{display:flex;gap:9px;align-items:baseline;font-size:12.5px;color:#475467}
-  .reason-codes .rc b{background:#f2f4f7;border-radius:6px;padding:1px 8px;font-size:11px;color:#344054;flex-shrink:0}
+        .form-group {
+            margin-bottom: 15px;
+        }
 
-  @media (max-width:1060px){.grid{grid-template-columns:1fr}}
-  @media (max-width:860px){
-    .app{display:block}aside{display:none}main{padding:18px}
-    .metrics{grid-template-columns:1fr 1fr}
-  }
-</style>
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 1em;
+            transition: border-color 0.2s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            color: #667eea;
+            margin-top: 15px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .alert {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            display: none;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert.error {
+            background: #fee;
+            color: #c33;
+            border: 1px solid #fcc;
+        }
+
+        .alert.success {
+            background: #efe;
+            color: #3c3;
+            border: 1px solid #cfc;
+        }
+
+        .results {
+            background: #f9f9f9;
+            border-radius: 6px;
+            padding: 20px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .results.show {
+            display: block;
+        }
+
+        .result-row {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .result-row:last-child {
+            border-bottom: none;
+        }
+
+        .result-label {
+            font-weight: 600;
+            color: #555;
+        }
+
+        .result-value {
+            color: #333;
+            font-family: 'Courier New', monospace;
+        }
+
+        .satellite-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        .satellite-table th {
+            background: #f5f5f5;
+            padding: 10px;
+            text-align: left;
+            border-bottom: 2px solid #ddd;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .satellite-table td {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .satellite-table tr:hover {
+            background: #fafafa;
+        }
+
+        .health-ok {
+            color: #3c3;
+            font-weight: 600;
+        }
+
+        .health-bad {
+            color: #c33;
+            font-weight: 600;
+        }
+
+        .info-box {
+            background: #e8f4f8;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            color: #555;
+        }
+
+        .info-box strong {
+            color: #333;
+        }
+
+        /* Constellation toggle */
+        .const-toggle {
+            display: flex;
+            margin-bottom: 20px;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid #ddd;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 9px;
+            border: none;
+            background: #f5f5f5;
+            color: #777;
+            font-size: 0.88em;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            letter-spacing: 1px;
+        }
+
+        .tab-btn:hover:not(.tab-active) {
+            background: #eee;
+        }
+
+        .tab-active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .glo-label {
+            color: #0099cc;
+            font-weight: 700;
+        }
+    </style>
 </head>
 <body>
-<div class="app">
-  <aside>
-    <div class="brand">
-      <div class="brand-mark">
-        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3a9 9 0 1 0 9 9" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M12 12l5-5" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>
-      </div>
-      <div>
-        <div class="brand-name">Credit<span>Lens</span></div>
-        <div class="brand-sub">מערכת החלטות אשראי</div>
-      </div>
-    </div>
-    <nav>
-      <a class="active" href="/">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
-        סקירת בקשה</a>
-      <a href="#sources">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>
-        מקורות נתונים</a>
-      <a href="#rules">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="19" cy="17" r="3"/></svg>
-        מדיניות וניקוד</a>
-      <a href="/validation" data-role="risk_manager" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18M6 16v-5M11 16V7M16 16v-8M21 16V4"/></svg>
-        תיקוף מודל</a>
-      <a href="/portfolio" data-role="risk_manager" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9v9h9z"/><path d="M14 3.5A9 9 0 0 1 20.5 10"/></svg>
-        דוח תיק אשראי</a>
-      <a href="/admin" data-role="admin" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.4"/><path d="M3 20c0-3.3 2.7-5.2 6-5.2s6 1.9 6 5.2"/><path d="M17 8h5M19.5 5.5v5"/></svg>
-        ניהול משתמשים</a>
-      <a href="#regulatory">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z"/><path d="M9 12l2 2 4-4"/></svg>
-        ציות ורגולציה</a>
-    </nav>
-    <div class="side-foot">CreditLens v2.1<br>סביבת הדגמה · נתונים סינתטיים</div>
-  </aside>
+    <div class="container">
+        <header>
+            <h1>🛰️ GPS / GLONASS / BeiDou / Galileo Calculator</h1>
+            <p class="subtitle">YUMA Almanac &amp; TLE Position Calculator</p>
+            <a href="/" style="display:inline-block;margin-top:14px;color:white;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.4);padding:8px 22px;border-radius:20px;text-decoration:none;font-size:0.95em;letter-spacing:1px;transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.25)'" onmouseout="this.style.background='rgba(255,255,255,0.15)'">🌍 Live Sky View</a>
+        </header>
 
-  <main>
-    <header class="topbar">
-      <div>
-        <h1>דירוג סיכון לקוח</h1>
-        <div class="page-sub">איחוד נתונים אוטומטי מכל מאגרי הארגון · ציון מוסבר · בקרת רגולציה</div>
-      </div>
-      <div class="status-chip"><span class="dot"></span> אינדקס פעיל · <b id="customer-count">…</b> לקוחות · <span id="source-files-chip">20 מאגרים</span></div>
-      <div class="status-chip user-chip"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#667085" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg> <b id="user-name">…</b> · <span id="user-role"></span> <a href="/logout" class="logout">התנתק</a></div>
-    </header>
+        <div class="grid">
+            <!-- Load Almanac Card -->
+            <div class="card">
+                <h2>Load Data</h2>
+                <div class="alert error" id="loadAlert"></div>
+                <div class="alert success" id="loadSuccess"></div>
 
-    <section class="card query-card">
-      <div class="field grow">
-        <label for="customer">לקוח</label>
-        <input id="customer" list="customer-options" placeholder="הקלד שם או מספר לקוח (CUS-…)" autocomplete="off">
-        <datalist id="customer-options"></datalist>
-      </div>
-      <div class="field">
-        <label for="amount">סכום מבוקש (₪)</label>
-        <input id="amount" type="number" value="100000" min="1" step="1000">
-      </div>
-      <button id="assess" class="cta"><span class="spin"></span>חשב דירוג סיכון</button>
-      <label class="consent"><input type="checkbox" id="consent-check"> התקבלה הסכמת הלקוח המתועדת לשליפת נתוני אשראי</label>
-    </section>
+                <div class="const-toggle">
+                    <button id="tab-gps" class="tab-btn tab-active" onclick="selectConstellation('GPS')">GPS</button>
+                    <button id="tab-glo" class="tab-btn" onclick="selectConstellation('GLONASS')">GLONASS</button>
+                    <button id="tab-bei" class="tab-btn" onclick="selectConstellation('BEIDOU')">BeiDou</button>
+                    <button id="tab-gal" class="tab-btn" onclick="selectConstellation('GALILEO')">Galileo</button>
+                </div>
 
-    <div id="error" class="banner danger" hidden></div>
+                <div class="form-group" id="date-group">
+                    <label for="dateInput">Date (YYYY-MM-DD)</label>
+                    <input type="text" id="dateInput" placeholder="e.g., 2026-04-19 or 'today'">
+                </div>
 
-    <div class="grid">
-      <section class="card card-pad">
-        <div class="card-title">תוצאת ההערכה <span class="sub" id="timestamp"></span></div>
-        <div id="result-empty" class="empty">בחר לקוח וסכום כדי להפיק דירוג סיכון</div>
-        <div id="result-body" hidden>
-          <div class="result-layout">
-            <div class="gauge-wrap">
-              <svg width="172" height="172" viewBox="0 0 172 172">
-                <circle class="gauge-bg" cx="86" cy="86" r="66"/>
-                <circle id="gauge-arc" cx="86" cy="86" r="66"/>
-              </svg>
-              <div class="gauge-center"><div><b id="score">—</b><small>ציון סיכון · 1–10 · נמוך=טוב</small></div></div>
+                <div class="info-box" id="glo-note" style="display:none;">
+                    Fetches current GLONASS TLEs from <strong>Celestrak</strong> (always up to date — no date needed)
+                </div>
+
+                <button id="loadBtn" onclick="loadAlmanac()">Load GPS Almanac</button>
+                <div class="loading" id="loadLoading">
+                    <span class="spinner"></span>
+                    Loading...
+                </div>
+
+                <div id="almanacInfo" style="display: none; margin-top: 20px;">
+                    <div class="info-box">
+                        <strong>Loaded:</strong> <span id="infoDate"></span><br>
+                        <span id="gps-week-row"><strong>GPS Week:</strong> <span id="infoWeek"></span><br></span>
+                        <strong>Satellites:</strong> <span id="infoCount"></span>
+                    </div>
+                </div>
             </div>
-            <div style="flex:1;min-width:230px">
-              <div class="decision" id="decision">—</div>
-              <div class="sub" id="customer-name">—</div>
-              <div class="metrics">
-                <div class="metric"><label>רמת סיכון</label><strong id="band">—</strong></div>
-                <div class="metric"><label>יחס חוב להכנסה</label><strong id="dti">—</strong></div>
-                <div class="metric"><label>זמן שליפה וחישוב</label><strong id="scan-time">—</strong></div>
-              </div>
-            </div>
-          </div>
-          <div id="hard-block" class="banner danger" style="margin:18px 0 0" hidden></div>
-          <div id="exception" class="banner warn" style="margin:18px 0 0" hidden></div>
-          <div id="reason-codes" class="reason-codes" hidden></div>
-          <div class="audit-line" id="audit-line" hidden>
-            <span>מזהה החלטה: <b id="decision-id"></b></span>
-            <span>גרסת מודל: <b id="model-version"></b></span>
-            <span>הסכמה: <b id="consent-id"></b></span>
-            <span>נרשם ביומן הביקורת ✓</span>
-            <a id="letter-link" href="#" target="_blank" style="color:var(--primary);font-weight:700;text-decoration:none">הפק מכתב החלטה ללקוח ↗</a>
-          </div>
-        </div>
-      </section>
 
-      <section class="card card-pad" id="sources">
-        <div class="card-title">מקורות נתונים שאוחדו</div>
-        <div class="source-meta" id="source-status">האקסלים נקלטים לאינדקס מתמשך; בכל בקשה נשלפות רק רשומות הלקוח.</div>
-        <div class="sources" id="source-list"><div class="empty">טרם בוצעה שליפה</div></div>
-        <div class="reg" id="regulatory">
-          <div class="reg-head"><strong>דירוג אשראי — בנק ישראל</strong><span class="reg-badge" id="reg-status">טרם נשלחה</span></div>
-          <small>החיבור מחייב הסכמת לקוח, ספק מורשה והרשאות API. סביבת ההדגמה אינה שולחת בקשות אמת.</small>
+            <!-- Calculate Position Card -->
+            <div class="card">
+                <h2>Calculate Position</h2>
+                <div class="alert error" id="calcAlert"></div>
+
+                <div class="form-group">
+                    <label for="prnInput" id="prn-label">PRN Number (1–32)</label>
+                    <input type="number" id="prnInput" min="1" max="32" placeholder="e.g., 1">
+                </div>
+
+                <div class="form-group">
+                    <label for="timeInput">Time (YYYY-MM-DD HH:MM:SS)</label>
+                    <input type="text" id="timeInput" placeholder="e.g., 2026-04-19 12:00:00 or 'now'">
+                </div>
+
+                <button id="calcBtn" onclick="calculatePosition()">Calculate</button>
+                <div class="loading" id="calcLoading">
+                    <span class="spinner"></span>
+                    Calculating...
+                </div>
+            </div>
         </div>
-      </section>
+
+        <!-- Satellites List Card -->
+        <div class="card">
+            <h2 id="sat-list-title">Satellites</h2>
+            <div id="satellitesContainer" style="display: none;">
+                <table class="satellite-table" id="sat-table">
+                    <thead id="sat-thead"></thead>
+                    <tbody id="satellitesList"></tbody>
+                </table>
+            </div>
+            <div id="noSatellites" style="text-align: center; color: #999; padding: 40px;">
+                Load an almanac to see satellites
+            </div>
+        </div>
+
+        <!-- Results Card -->
+        <div class="card results" id="resultsCard">
+            <h2>Position Results</h2>
+            <div id="resultsContent"></div>
+        </div>
     </div>
 
-    <section class="card card-pad" id="rules">
-      <div class="card-title">פירוט הקריטריונים ומשקלם בציון</div>
-      <table>
-        <thead><tr><th>קריטריון</th><th style="width:90px">משקל</th><th style="width:260px">ביצוע</th><th style="width:80px">תרומה</th></tr></thead>
-        <tbody id="breakdown"><tr><td colspan="4" class="empty">הפק דירוג כדי לראות את פירוט הניקוד</td></tr></tbody>
-      </table>
-    </section>
-  </main>
-</div>
+    <script>
+        let currentConstellation = 'GPS';
 
-<script>
-const $=id=>document.getElementById(id);
-const GAUGE_C=2*Math.PI*66;
-const COLORS={green:'#12b76a',amber:'#f79009',red:'#f04438'};
+        const CONST_LABELS = { GPS: 'Load GPS Almanac', GLONASS: 'Load GLONASS TLEs', BEIDOU: 'Load BeiDou TLEs', GALILEO: 'Load Galileo TLEs' };
+        const CONST_PRN   = { GPS: 'PRN Number (1–32)', GLONASS: 'Satellite # (1–30)', BEIDOU: 'Satellite # (1–60)', GALILEO: 'Satellite # (1–36)' };
+        const CONST_MAX   = { GPS: 32, GLONASS: 30, BEIDOU: 60, GALILEO: 36 };
+        const CONST_TAB   = { GPS: 'tab-gps', GLONASS: 'tab-glo', BEIDOU: 'tab-bei', GALILEO: 'tab-gal' };
 
-async function assess(){
-  const btn=$('assess');
-  btn.disabled=true;btn.classList.add('loading');$('error').hidden=true;
-  try{
-    const r=await fetch('/api/credit/assess',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({customer_id:$('customer').value,amount:$('amount').value,consent_given:$('consent-check').checked})});
-    const d=await r.json();
-    if(r.status===401){location.href='/login';return}
-    if(!r.ok)throw Error(d.error||'שגיאה בחישוב הדירוג');
-    render(d);
-  }catch(e){$('error').textContent=e.message;$('error').hidden=false}
-  finally{btn.disabled=false;btn.classList.remove('loading')}
-}
+        function selectConstellation(c) {
+            currentConstellation = c;
+            Object.keys(CONST_TAB).forEach(x => {
+                document.getElementById(CONST_TAB[x]).className = 'tab-btn' + (c === x ? ' tab-active' : '');
+            });
+            document.getElementById('date-group').style.display = c === 'GPS' ? '' : 'none';
+            document.getElementById('glo-note').style.display   = c !== 'GPS' ? '' : 'none';
+            document.getElementById('loadBtn').textContent       = CONST_LABELS[c];
+            document.getElementById('prn-label').textContent     = CONST_PRN[c];
+            document.getElementById('prnInput').max              = CONST_MAX[c];
+            document.getElementById('almanacInfo').style.display = 'none';
+            document.getElementById('satellitesContainer').style.display = 'none';
+            document.getElementById('noSatellites').style.display = 'block';
+            document.getElementById('noSatellites').textContent  = 'Load data to see satellites';
+        }
 
-function render(d){
-  $('result-empty').hidden=true;$('result-body').hidden=false;
-  $('score').textContent=d.score;
-  $('decision').textContent=d.decision;$('decision').className='decision '+d.decision_color;
-  $('customer-name').textContent=d.customer.name+' · '+d.customer.employer+' · '+d.customer.customer_id;
-  $('band').textContent=d.risk_band;
-  $('dti').textContent=Math.round(d.dti*100)+'%';
-  $('scan-time').textContent=d.source_scan.scan_ms<1000?d.source_scan.scan_ms+' מ״ש':(d.source_scan.scan_ms/1000).toFixed(1)+' שנ׳';
-  $('timestamp').textContent=new Date().toLocaleTimeString('he-IL');
-  const arc=$('gauge-arc');
-  arc.style.strokeDashoffset=GAUGE_C*(1-Math.min(d.score,10)/10);
-  arc.style.stroke=COLORS[d.decision_color]||COLORS.amber;
-  const fileIc='<span class="file-ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/><path d="M14 2v6h6"/></svg></span>';
-  $('source-list').innerHTML=d.sources.map(s=>`<div class="source">${fileIc}<span class="s-name">${s.name}</span><span class="s-fields">${s.fields} שדות · ${s.rows} רשומות</span></div>`).join('');
-  $('source-status').innerHTML=`<b>${d.source_scan.files_scanned}</b> מאגרים באינדקס · <b>${d.source_scan.rows_scanned.toLocaleString('he-IL')}</b> שורות · נשלפו <b>${d.source_scan.records_retrieved}</b> רשומות לקוח מ-<b>${d.source_scan.files_matched}</b> מאגרים תוך <b>${d.source_scan.query_ms}</b> מ״ש`;
-  $('breakdown').innerHTML=d.breakdown.map(x=>{
-    const cls=x.value>=70?'good':x.value>=40?'mid':'bad';
-    return `<tr><td><div class="c-name">${x.name}</div><div class="c-desc">${x.description}</div></td>
-      <td><span class="w-chip">${x.weight}%</span></td>
-      <td><span class="bar"><i class="${cls}" style="width:${x.value}%"></i></span> ${x.value}/100</td>
-      <td class="contrib">${x.contribution}</td></tr>`;
-  }).join('');
-  $('reg-status').textContent=d.regulatory.status;
-  if(d.hard_blocks&&d.hard_blocks.length){$('hard-block').hidden=false;$('hard-block').innerHTML='<strong>חסימה רגולטורית</strong>'+d.hard_blocks.join('<br>')}else{$('hard-block').hidden=true}
-  if(d.override){$('exception').hidden=false;$('exception').innerHTML='<strong>חריגה מהקריטריונים — אושר בשיקול דעת המערכת</strong>'+d.exceptions.join(' · ')+'<br>'+d.override_note}
-  else if(d.exceptions&&d.exceptions.length){$('exception').hidden=false;$('exception').innerHTML='<strong>חריגות שנמצאו</strong>'+d.exceptions.join(' · ')}
-  else{$('exception').hidden=true}
-  if(d.reason_codes&&d.reason_codes.length){
-    $('reason-codes').hidden=false;
-    $('reason-codes').innerHTML='<div style="font-weight:700;font-size:12.5px;color:var(--ink)">נימוקי החלטה (חובת הנמקה)</div>'+
-      d.reason_codes.map(rc=>`<div class="rc"><b>${rc.code}</b>${rc.reason}</div>`).join('');
-  }else{$('reason-codes').hidden=true}
-  if(d.decision_id){
-    $('audit-line').hidden=false;
-    $('decision-id').textContent=d.decision_id;
-    $('model-version').textContent=d.model_version;
-    $('consent-id').textContent=d.consent?d.consent.consent_id:'—';
-    $('letter-link').href='/decision/'+encodeURIComponent(d.decision_id);
-  }
-}
+        function hideAlert(id) {
+            setTimeout(() => {
+                document.getElementById(id).classList.remove('show');
+            }, 5000);
+        }
 
-let searchTimer=null;
-const ROLE_NAMES={underwriter:'חתם אשראי',risk_manager:'ניהול סיכונים',admin:'מנהל מערכת'};
-async function loadMe(){
-  try{
-    const r=await fetch('/api/me');
-    if(r.status===401){location.href='/login';return}
-    const d=await r.json();
-    $('user-name').textContent=d.user.display_name.split(' — ')[0];
-    $('user-role').textContent=ROLE_NAMES[d.user.role]||d.user.role;
-    const rank={underwriter:0,risk_manager:1,admin:2}[d.user.role]??0;
-    document.querySelectorAll('nav a[data-role]').forEach(link=>{
-      const need={underwriter:0,risk_manager:1,admin:2}[link.dataset.role]??0;
-      link.hidden = rank < need;
-    });
-  }catch(e){}
-}
-async function searchCustomers(){
-  const q=$('customer').value.trim();
-  try{
-    const r=await fetch('/api/credit/customers?q='+encodeURIComponent(q)+'&limit=50');
-    if(r.status===401){location.href='/login';return}
-    const d=await r.json();
-    $('customer-count').textContent=d.total_customers.toLocaleString('he-IL');
-    $('customer-options').innerHTML=d.customers.map(c=>`<option value="${c.customer_id}">${c.name}</option>`).join('');
-  }catch(e){/* Free-text entry still works when search is unavailable. */}
-}
-$('customer').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(searchCustomers,200)});
-$('customer').addEventListener('keydown',e=>{if(e.key==='Enter')assess()});
-$('amount').addEventListener('keydown',e=>{if(e.key==='Enter')assess()});
-$('assess').addEventListener('click',assess);
-loadMe();
-searchCustomers();
-</script>
+        function showError(containerId, message) {
+            const alert = document.getElementById(containerId);
+            alert.textContent = '❌ ' + message;
+            alert.classList.add('show');
+            hideAlert(containerId);
+        }
+
+        function showSuccess(containerId, message) {
+            const alert = document.getElementById(containerId);
+            alert.textContent = '✓ ' + message;
+            alert.classList.add('show');
+            hideAlert(containerId);
+        }
+
+        async function loadAlmanac() {
+            const btn     = document.getElementById('loadBtn');
+            const loading = document.getElementById('loadLoading');
+            btn.disabled  = true;
+            loading.classList.add('show');
+            document.getElementById('loadAlert').classList.remove('show');
+            document.getElementById('loadSuccess').classList.remove('show');
+
+            const body = { constellation: currentConstellation };
+            if (currentConstellation === 'GPS') {
+                body.date = document.getElementById('dateInput').value || 'today';
+            }
+
+            try {
+                const response = await fetch('/api/load-almanac', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showError('loadAlert', data.error || 'Failed to load data');
+                    return;
+                }
+
+                showSuccess('loadSuccess', `Loaded ${data.count} satellites`);
+
+                // Update info box
+                const infoDate = currentConstellation === 'GPS' ? (body.date) : data.source;
+                document.getElementById('infoDate').textContent = infoDate;
+                document.getElementById('infoWeek').textContent = data.week || '';
+                document.getElementById('infoCount').textContent = data.count;
+                document.getElementById('gps-week-row').style.display = currentConstellation === 'GPS' ? '' : 'none';
+                document.getElementById('almanacInfo').style.display = 'block';
+
+                await loadSatellitesList();
+
+            } catch (error) {
+                showError('loadAlert', 'Network error: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                loading.classList.remove('show');
+            }
+        }
+
+        async function loadSatellitesList() {
+            try {
+                const response = await fetch('/api/satellites?constellation=' + currentConstellation);
+                const data = await response.json();
+                if (!response.ok) return;
+
+                const thead = document.getElementById('sat-thead');
+                const tbody = document.getElementById('satellitesList');
+                tbody.innerHTML = '';
+
+                if (currentConstellation === 'GPS') {
+                    thead.innerHTML = `<tr>
+                        <th>Label</th><th>Health</th><th>Eccentricity</th><th>√A (m)</th><th>Inclination (°)</th>
+                    </tr>`;
+                    data.satellites.forEach(sat => {
+                        const row = tbody.insertRow();
+                        const hc  = sat.health === 'Healthy' ? 'health-ok' : 'health-bad';
+                        row.innerHTML = `
+                            <td>${sat.label}</td>
+                            <td><span class="${hc}">${sat.health}</span></td>
+                            <td>${sat.e}</td>
+                            <td>${sat.sqA}</td>
+                            <td>${sat.inc}</td>`;
+                    });
+                } else {
+                    thead.innerHTML = `<tr>
+                        <th>Label</th><th>Health</th><th>TLE Name</th>
+                    </tr>`;
+                    data.satellites.forEach(sat => {
+                        const row = tbody.insertRow();
+                        row.innerHTML = `
+                            <td class="glo-label">${sat.label}</td>
+                            <td><span class="health-ok">${sat.health}</span></td>
+                            <td style="font-size:0.9em;color:#666">${sat.name}</td>`;
+                    });
+                }
+
+                document.getElementById('satellitesContainer').style.display = 'block';
+                document.getElementById('noSatellites').style.display = 'none';
+
+            } catch (error) {
+                console.error('Error loading satellites:', error);
+            }
+        }
+
+        async function calculatePosition() {
+            const prn       = document.getElementById('prnInput').value;
+            const timeInput = document.getElementById('timeInput').value || 'now';
+            const btn       = document.getElementById('calcBtn');
+            const loading   = document.getElementById('calcLoading');
+
+            if (!prn) {
+                showError('calcAlert', 'Please enter a satellite number');
+                return;
+            }
+
+            btn.disabled = true;
+            loading.classList.add('show');
+            document.getElementById('calcAlert').classList.remove('show');
+
+            try {
+                const response = await fetch('/api/calculate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prn: parseInt(prn), time: timeInput, constellation: currentConstellation }),
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showError('calcAlert', data.error || 'Calculation failed');
+                    return;
+                }
+
+                displayResults(data);
+
+            } catch (error) {
+                showError('calcAlert', 'Network error: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                loading.classList.remove('show');
+            }
+        }
+
+        function displayResults(data) {
+            const labelStyle = data.constellation === 'GLONASS' ? 'color:#0099cc;font-weight:700'
+                : data.constellation === 'BEIDOU'  ? 'color:#cc9900;font-weight:700'
+                : data.constellation === 'GALILEO' ? 'color:#ff9500;font-weight:700'
+                : 'color:#5a2d8a;font-weight:700';
+            const html = `
+                <div class="result-row">
+                    <div class="result-label">Satellite</div>
+                    <div class="result-value" style="${labelStyle}">${data.label} (${data.constellation})</div>
+                </div>
+                <div class="result-row">
+                    <div class="result-label">Time (UTC)</div>
+                    <div class="result-value">${data.time}</div>
+                </div>
+                <div class="result-row">
+                    <div class="result-label">X (ECEF)</div>
+                    <div class="result-value">${data.ecef.x} m</div>
+                </div>
+                <div class="result-row">
+                    <div class="result-label">Y (ECEF)</div>
+                    <div class="result-value">${data.ecef.y} m</div>
+                </div>
+                <div class="result-row">
+                    <div class="result-label">Z (ECEF)</div>
+                    <div class="result-value">${data.ecef.z} m</div>
+                </div>
+                <div class="result-row">
+                    <div class="result-label">Distance</div>
+                    <div class="result-value">${data.ecef.r} km</div>
+                </div>
+                <div class="result-row">
+                    <div class="result-label">Latitude</div>
+                    <div class="result-value">${data.geodetic.latitude}°</div>
+                </div>
+                <div class="result-row">
+                    <div class="result-label">Longitude</div>
+                    <div class="result-value">${data.geodetic.longitude}°</div>
+                </div>
+                <div class="result-row">
+                    <div class="result-label">Altitude</div>
+                    <div class="result-value">${data.geodetic.altitude} km</div>
+                </div>
+            `;
+
+            document.getElementById('resultsContent').innerHTML = html;
+            document.getElementById('resultsCard').classList.add('show');
+        }
+
+        // Allow Enter key on inputs
+        document.getElementById('dateInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') loadAlmanac();
+        });
+
+        document.getElementById('timeInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') calculatePosition();
+        });
+    </script>
 </body>
 </html>
