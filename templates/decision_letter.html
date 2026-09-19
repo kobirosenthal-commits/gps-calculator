@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CreditLens — מכתב החלטת אשראי</title>
+<link rel="icon" href="/static/creditlens.ico">
+<style>
+  :root{--ink:#101828;--muted:#667085;--faint:#98a2b3;--line:#e4e9f2;
+        --primary:#1d4ed8;--green:#067647;--amber:#b54708;--red:#b42318;--navy:#0c1a3a}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#eef1f7;color:var(--ink);font:14px/1.7 "Segoe UI","Heebo",system-ui,Arial,sans-serif;padding:26px 16px 60px}
+  .toolbar{max-width:820px;margin:0 auto 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  .toolbar a{color:var(--primary);text-decoration:none;font-weight:600}
+  button{background:var(--primary);color:#fff;border:0;border-radius:9px;padding:10px 22px;font:600 13.5px inherit;font-family:inherit;cursor:pointer}
+  .sheet{max-width:820px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:12px;padding:44px 52px 52px;box-shadow:0 4px 20px rgba(16,24,40,.07)}
+  .letterhead{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--navy);padding-bottom:16px;margin-bottom:26px}
+  .brand-name{font-size:22px;font-weight:800;color:var(--navy)}
+  .brand-name span{color:var(--primary)}
+  .brand-sub{font-size:11.5px;color:var(--muted)}
+  .doc-meta{text-align:left;font-size:11.5px;color:var(--muted);line-height:1.9}
+  .doc-meta b{color:var(--ink)}
+  h1{font-size:19px;font-weight:700;margin-bottom:6px}
+  h2{font-size:14px;font-weight:700;margin:26px 0 10px}
+  p{margin-bottom:11px;font-size:13.5px}
+  .outcome{border-radius:11px;padding:16px 20px;margin:18px 0;border:1px solid}
+  .outcome.green{background:#ecfdf3;border-color:#a6f4c5;color:var(--green)}
+  .outcome.amber{background:#fffaeb;border-color:#fedf89;color:var(--amber)}
+  .outcome.red{background:#fef3f2;border-color:#fecdca;color:var(--red)}
+  .outcome b{font-size:17px;display:block;margin-bottom:3px}
+  .outcome span{color:#475467;font-size:12.5px}
+  table{width:100%;border-collapse:collapse;margin-top:6px}
+  th{text-align:right;font-size:11.5px;color:var(--muted);font-weight:600;padding:7px 9px;border-bottom:1px solid var(--line)}
+  td{padding:8px 9px;border-bottom:1px solid #f1f4f9;font-size:13px}
+  ol,ul{margin:0 20px 10px 0}
+  li{font-size:13.5px;margin-bottom:6px}
+  .rc{display:flex;gap:10px;align-items:baseline;margin-bottom:7px;font-size:13px}
+  .rc b{background:#f2f4f7;border-radius:6px;padding:1px 9px;font-size:11px;color:#344054;flex-shrink:0}
+  .override-note{border:1px solid #fecdca;background:#fef3f2;border-radius:11px;padding:14px 18px;margin:16px 0;color:var(--red);font-size:13px;font-weight:600;line-height:1.8}
+  .blocked{border:1px solid #fecdca;background:#fef3f2;border-radius:11px;padding:14px 18px;margin:16px 0;color:var(--red);font-size:13px}
+  .legal{margin-top:30px;padding-top:16px;border-top:1px dashed var(--line);font-size:11.5px;color:var(--muted);line-height:1.8}
+  .sign{margin-top:30px;display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap}
+  .sign .who{font-size:13px}
+  .sign .who b{display:block;font-size:14px}
+  .stamp{font-size:11px;color:var(--faint);text-align:left;line-height:1.8}
+  .empty{max-width:820px;margin:0 auto;background:#fff;border-radius:12px;padding:60px;text-align:center;color:var(--faint)}
+  @media print{
+    body{background:#fff;padding:0}
+    .toolbar{display:none}
+    .sheet{border:0;box-shadow:none;border-radius:0;max-width:none;padding:0}
+  }
+</style>
+</head>
+<body>
+{% if decision %}
+<div class="toolbar">
+  <a href="/">← חזרה למערכת</a>
+  <button onclick="window.print()">הדפסה / שמירה כ־PDF</button>
+</div>
+<div class="sheet">
+  <div class="letterhead">
+    <div>
+      <div class="brand-name">Credit<span>Lens</span></div>
+      <div class="brand-sub">מערכת החלטות אשראי · הודעת החלטה ללקוח</div>
+    </div>
+    <div class="doc-meta">
+      מספר החלטה: <b>{{ decision.decision_id }}</b><br>
+      תאריך: <b>{{ decision.decided_at[:10] }}</b> {{ decision.decided_at[11:16] }}<br>
+      מזהה הסכמה: <b>{{ decision.consent_id }}</b>
+    </div>
+  </div>
+
+  <h1>הודעה על תוצאת בקשת אשראי</h1>
+  <p>לכבוד <b>{{ decision.customer_name }}</b> (מספר לקוח {{ decision.customer_id }}),<br>
+     בהמשך לבקשתך לאשראי בסך <b>₪{{ '{:,.0f}'.format(decision.amount) }}</b>, להלן תוצאת הבדיקה שביצענו.</p>
+
+  {% set tone = 'green' if decision.decision == 'אישור' else ('red' if decision.decision == 'דחייה' else 'amber') %}
+  <div class="outcome {{ tone }}">
+    <b>{{ decision.decision }}</b>
+    <span>דירוג סיכון לקוח: {{ '%.1f'|format(decision.score) }} מתוך 10 (1 = סיכון נמוך) · גרסת מודל {{ decision.model_version }}</span>
+  </div>
+
+  {% if decision.override %}
+  <div class="override-note">
+    ⚑ הבקשה אינה עומדת במלוא קריטריוני המדיניות. לאחר בחינת מכלול הנתונים — אימות זהות והכנסה,
+    יחס החזר תקין והיסטוריית תשלומים נקייה — הופעל שיקול דעת חיתומי והבקשה אושרה בתנאים.
+    ההחלטה מתועדת ביומן הביקורת לצורך בקרה ופיקוח.
+  </div>
+  {% endif %}
+
+  {% if decision.hard_blocks %}
+  <div class="blocked">
+    <b>חסם ציות:</b>
+    <ul>{% for block in decision.hard_blocks %}<li>{{ block }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  {% if decision.reason_codes %}
+  <h2>נימוקי ההחלטה (חובת הנמקה)</h2>
+  <p>הגורמים המרכזיים שהשפיעו לרעה על הדירוג, בסדר השפעה יורד:</p>
+  {% for code in decision.reason_codes %}
+  <div class="rc"><b>{{ code.code }}</b><span>{{ code.reason }}</span></div>
+  {% endfor %}
+  {% endif %}
+
+  {% if decision.exceptions %}
+  <h2>חריגות שזוהו בתיק</h2>
+  <ul>{% for item in decision.exceptions %}<li>{{ item }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  <h2>מרכיבי הדירוג</h2>
+  <table>
+    <thead><tr><th>קריטריון</th><th>משקל</th><th>ציון רכיב (0–100)</th><th>תרומה</th></tr></thead>
+    <tbody>
+      {% for row in decision.breakdown %}
+      <tr><td>{{ row.name }}</td><td>{{ row.weight }}%</td><td>{{ row.value }}</td><td>{{ row.contribution }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>מקורות המידע שנבדקו</h2>
+  <p>ההחלטה התבססה על {{ decision.sources|length }} מאגרי נתונים פנימיים של החברה, בהתאם להסכמתך המתועדת:</p>
+  <ul>{% for source in decision.sources[:12] %}<li>{{ source.name }} — {{ source.rows }} רשומות</li>{% endfor %}
+  {% if decision.sources|length > 12 %}<li>ועוד {{ decision.sources|length - 12 }} מאגרים</li>{% endif %}</ul>
+
+  <div class="legal">
+    <b>זכויותיך:</b> באפשרותך לקבל עותק מהנתונים ששימשו להחלטה, להגיש בקשה לתיקון נתון שגוי,
+    ולבקש בחינה חוזרת של ההחלטה על ידי גורם אנושי בתוך 30 יום ממועד הודעה זו.
+    נתוני לשכת האשראי מתקבלים אך ורק דרך לשכה מורשית ובהסכמתך; ההחלטה אינה מתבססת על גיל,
+    מגדר, לאום, דת, מצב משפחתי או כתובת מגורים.
+    פנייה: מחלקת אשראי · בקרת ציות. ניתן לפנות גם לממונה על פניות הציבור בבנק ישראל.
+    <br><br>
+    <b>הבהרה:</b> מסמך זה הופק בסביבת הדגמה של CreditLens על נתונים סינתטיים ואינו מהווה הודעת אשראי מחייבת.
+  </div>
+
+  <div class="sign">
+    <div class="who">בכבוד רב,<b>{{ signer }}</b>חיתום אשראי · CreditLens</div>
+    <div class="stamp">
+      הופק אוטומטית · {{ decision.decision_id }}<br>
+      מתועד ביומן ביקורת בלתי ניתן לשינוי
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="empty">ההחלטה המבוקשת לא נמצאה ביומן הביקורת.<br><br><a href="/">חזרה למערכת</a></div>
+{% endif %}
+</body>
+</html>

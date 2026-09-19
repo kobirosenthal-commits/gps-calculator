@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.idea/
+*.egg-info/
+.DS_Store
+credit_index.sqlite3*
+credit_compliance.sqlite3*
+credit_auth.sqlite3*
+credit_auth.key
+credit_validation.sqlite3*
+*.sqlite3-wal
+*.sqlite3-shm
+backups/
+.venv/
+.venv-wsl/
+.claude/
